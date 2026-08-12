@@ -480,9 +480,10 @@ function grupoAtivo(g) {
 
 const gruposAtivos = () => refAtual.grupos.filter(grupoAtivo);
 
-/** Fora do sheet, "Completar" sozinho não diz nada — no relatório vira
- *  "Suco verde · Completar". */
-const nomeCheio = g => (g.bloco ? g.bloco + ' · ' : '') + g.nome;
+/** Todo grupo tem nome que se sustenta sozinho ("Complementos do suco", não
+ *  só "Completar"), então fora do sheet basta o nome — concatenar o bloco
+ *  fazia "Bebida quente · Tipo de chá" parecer dois itens numa lista. */
+const nomeCheio = g => g.nome;
 
 function renderGrupos() {
   const cx = document.getElementById('sheet-grupos');
@@ -711,9 +712,10 @@ function mudarMedida(grupoId, i, delta) {
   renderGrupos();
 }
 
-/** Barra fixa embaixo: enquanto falta grupo, ela mostra o progresso e leva ao
- *  próximo que falta. Quando tudo está completo, vira o botão de confirmar —
- *  atalho pra quem já terminou, sem tirar de ninguém a passagem pelo conteúdo. */
+/** Barra fixa embaixo: é SÓ indicador de progresso e atalho de navegação.
+ *  O botão de confirmar existe uma vez só, no fim da rolagem — dois botões
+ *  iguais na tela ao mesmo tempo confundem e tiram o sentido de ter posto o
+ *  confirmar lá embaixo. */
 function renderPeRefeicao() {
   const pe = document.getElementById('sheet-pe');
   if (!pe) return;
@@ -724,13 +726,27 @@ function renderPeRefeicao() {
   const total = ativos.length;
   const completa = feitos === total;
 
-  pe.innerHTML = completa
-    ? `<button class="btn btn-cheio" style="width:100%" onclick="confirmarRefeicao()">
-         Confirmar ${esc(primeiraPalavra(refAtual.nome))}</button>`
-    : `<button class="pe-progresso" onclick="irParaGrupoQueFalta()">
-         <span class="pe-barra"><i style="transform:scaleX(${(feitos / total).toFixed(3)})"></i></span>
-         <span class="pe-txt"><strong>${feitos} de ${total}</strong> grupos · toque para ir ao que falta</span>
-       </button>`;
+  pe.innerHTML = `
+    <button class="pe-progresso ${completa ? 'pronto' : ''}"
+      onclick="${completa ? 'irParaConfirmar()' : 'irParaGrupoQueFalta()'}">
+      <span class="pe-barra"><i style="transform:scaleX(${(feitos / total).toFixed(3)})"></i></span>
+      <span class="pe-txt">${completa
+        ? '<strong>Tudo escolhido ✓</strong> · toque para confirmar'
+        : `<strong>${feitos} de ${total}</strong> grupos · toque para ir ao que falta`}</span>
+    </button>`;
+}
+
+/** Leva até o botão de confirmar e chama atenção pra ele. */
+function irParaConfirmar() {
+  const corpo = document.getElementById('sheet-grupos');
+  const alvo = document.getElementById('fim-grupos');
+  if (!corpo || !alvo) return;
+  corpo.scrollTo({ top: corpo.scrollHeight, behavior: 'smooth' });
+  const btn = alvo.querySelector('.btn-cheio');
+  if (!btn) return;
+  btn.classList.remove('pulsa');
+  void btn.offsetWidth;                 // reinicia a animação se já tocou antes
+  btn.classList.add('pulsa');
 }
 
 /** Escolhas da última vez que ela fez essa refeição (qualquer dia anterior). */

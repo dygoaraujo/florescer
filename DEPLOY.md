@@ -34,7 +34,24 @@ tipo de token do passo 3 — GitHub não aceita mais senha de conta no push).
 
 ---
 
-## 2. Publicar na Vercel
+## 2. Publicar — escolha um
+
+O repositório é **público**, então as duas opções funcionam. Só o **código** fica
+público (HTML, CSS e JS). **Nenhum dado dela** — os registros vivem no celular e
+no Gist privado, protegidos pelo seu token, que nunca entra no código.
+
+### Opção A — GitHub Pages (não precisa de outra conta)
+
+1. No repositório → **Settings** → **Pages**
+2. **Source:** Deploy from a branch
+3. **Branch:** `main`, pasta `/ (root)` → **Save**
+
+Em ~1 minuto sai em `https://dygoaraujo.github.io/florescer/`.
+
+### Opção B — Vercel
+
+Funciona também com repositório privado, se um dia você quiser fechar o código.
+É o que você já usa no Command Center.
 
 1. Vá em **[vercel.com/new](https://vercel.com/new)**
 2. **Import** o repositório `florescer`
@@ -50,7 +67,16 @@ Não tem build: é HTML, CSS e JS puro, a Vercel só serve os arquivos.
 Quando terminar, entre em **Settings → Domains** e troque o nome automático por
 algo que ela reconheça, tipo `florescer-lorena.vercel.app`.
 
-**A partir daqui, todo `git push` republica o app sozinho.**
+**Nas duas opções, todo `git push` republica o app sozinho.**
+
+### Confira que ficou offline-ready
+
+Abra a URL publicada no Chrome do computador, aperte **F12** → aba **Application**
+→ **Service Workers**. Tem que aparecer um worker **activated and is running**.
+
+É esse worker que faz o app abrir sem internet. Ele só funciona em HTTPS — por
+isso não dá pra testar direito no `localhost` de dentro de um painel embutido.
+Se não aparecer, me avise.
 
 ---
 

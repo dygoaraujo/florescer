@@ -490,7 +490,7 @@ console.log('\n── Mínimo, teto e itens obrigatórios ───────'
   `);
   const log = run(ctx, "DB.get('logRefeicoes').find(l => l.refeicaoId === 'r-cafe')");
   eq('faltando o gengibre, a refeição fica incompleta', log.completa, false);
-  eq('e o app sabe qual grupo faltou', log.faltou, ['Suco verde · Completar']);
+  eq('e o app sabe qual grupo faltou', log.faltou, ['Complementos do suco']);
   eq('o registro guarda a hora do plano pra comparar', log.horaPlanejada, '07:30');
 }
 
@@ -611,14 +611,14 @@ console.log('\n── Blocos e hierarquia ────────────�
   const cafe = run(ctx, 'dietaAtiva().refeicoes[0]');
   eq('os três grupos do suco vivem no mesmo bloco',
      cafe.grupos.filter(g => g.bloco === 'Suco verde').map(g => g.nome),
-     ['Folhas verdes', 'Fruta', 'Completar']);
+     ['Folhas verdes', 'Fruta do suco', 'Complementos do suco']);
   eq('chá e café ficam em Bebida quente',
      cafe.grupos.filter(g => g.bloco === 'Bebida quente').map(g => g.nome),
-     ['Chá ou café', 'Qual chá']);
-  eq('o nome cheio explica o grupo fora do sheet', run(ctx, `
+     ['Chá ou café', 'Tipo de chá']);
+  eq('o nome do grupo se sustenta sozinho fora do sheet', run(ctx, `
     abrirRefeicao('r-cafe');
     nomeCheio(dietaAtiva().refeicoes[0].grupos.find(g => g.id === 'g-suco-extra'));
-  `), 'Suco verde · Completar');
+  `), 'Complementos do suco');
 
   // Oleaginosas tem uma seção só: o subtítulo repetiria o nome do grupo
   eq('grupo com uma seção só não repete subtítulo', run(ctx, `

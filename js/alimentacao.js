@@ -53,12 +53,45 @@ function itensEscolhidos(log) {
   return itens;
 }
 
-/** "Patinho 150 g, arroz 50 g e alface" */
+/** "Patinho 150 g, arroz 50 g e alface" — usado onde cabe só uma linha. */
 function escolhasTexto(log) {
   return fmt.lista(itensEscolhidos(log).map(it => {
     const m = medidaTexto(it.medida);
     return m && it.medida && it.medida.valor != null ? `${it.nome} ${m}` : it.nome;
   }));
+}
+
+const itemTexto = it => {
+  const m = medidaTexto(it.medida);
+  return m && it.medida && it.medida.valor != null ? `${it.nome} ${m}` : it.nome;
+};
+
+/** Uma linha por grupo, em vez de uma frase corrida com dez alimentos. */
+function escolhasPorGrupo(log) {
+  const dieta = (DB.get('dietas') || []).find(d => d.id === log.dietaId);
+  const ref = dieta && dieta.refeicoes.find(r => r.id === log.refeicaoId);
+
+  return (log.escolhas || []).map(e => {
+    const g = ref && ref.grupos.find(x => x.id === e.grupoId);
+    const lista = e.itens || (e.opcaoIds || []).map(id => ({ opcaoId: id }));
+    const itens = lista.map(it => {
+      const o = g && g.opcoes.find(x => x.id === it.opcaoId);
+      return itemTexto({ nome: it.nome || (o ? o.nome : '—'), medida: it.medida || (o ? o.medida : null) });
+    });
+    return { grupo: e.grupoNome || (g ? g.nome : ''), itens };
+  }).filter(l => l.itens.length);
+}
+
+function linhasEscolhaHTML(log) {
+  const linhas = escolhasPorGrupo(log);
+  if (!linhas.length) return '';
+  return `<div class="escolhas">
+    ${linhas.map(l => `
+      <div class="escolha-linha">
+        <span class="escolha-grupo">${esc(l.grupo)}</span>
+        <span class="escolha-itens">${esc(l.itens.join(' · '))}</span>
+      </div>`).join('')}
+  </div>`;
 }
 
 function nomeRefeicao(log) {
@@ -78,22 +111,21 @@ function comidaHojeHTML() {
   return `<div class="cartao">
     ${dieta.refeicoes.map(r => {
       const l = logs.find(x => x.refeicaoId === r.id);
-      const pediu = resumoRefeicao(r);
-      let sub, marca;
-      if (!l)                         { sub = pediu;            marca = `<span class="pill">a fazer</span>`; }
-      else if (l.status === 'pulada') { sub = 'não foi feita';  marca = `<span class="pill">pulada</span>`; }
-      else {
-        sub = escolhasTexto(l) || pediu;
-        marca = l.completa === false
-          ? `<span class="pill pill-ambar">incompleta</span>`
-          : `<span class="pill pill-folha">${esc(l.hora)}</span>`;
-      }
-      return `<div class="lista-item">
-        <span class="li-txt">
-          <span class="li-nome">${esc(r.nome)}</span>
-          <span class="li-sub">${esc(sub)}</span>
-        </span>
-        ${marca}
+      const feita = l && l.status === 'feita';
+      const marca = !l ? `<span class="pill">a fazer</span>`
+        : l.status === 'pulada' ? `<span class="pill">pulada</span>`
+        : l.completa === false ? `<span class="pill pill-ambar">incompleta</span>`
+        : `<span class="pill pill-folha">${esc(l.hora)}</span>`;
+
+      return `<div class="refeicao-dia ${feita ? 'feita' : ''}">
+        <div class="refeicao-topo">
+          <span class="refeicao-nome">${esc(r.nome)}</span>
+          ${marca}
+        </div>
+        ${feita
+          ? linhasEscolhaHTML(l) + (l.completa === false && (l.faltou || []).length
+              ? `<div class="escolha-falta">faltou ${esc(fmt.lista(l.faltou))}</div>` : '')
+          : `<div class="refeicao-pede">${esc(l ? 'Não foi feita.' : resumoRefeicao(r))}</div>`}
       </div>`;
     }).join('')}
   </div>
@@ -120,17 +152,15 @@ function comidaHistoricoHTML() {
           <span class="li-fim" style="margin-left:auto">${feitas.length}${totalRefs ? '/' + totalRefs : ''} · ${notaDe(d)}%</span>
         </div>
         ${doDia.sort((a, b) => a.hora.localeCompare(b.hora)).map(l => `
-          <div style="display:flex;gap:9px;padding:6px 0;font-size:13.5px;line-height:1.5">
-            <span class="num" style="color:var(--tinta-fraca);flex-shrink:0;width:36px">${esc(l.hora)}</span>
-            <span style="flex:1;min-width:0">
-              <strong style="font-weight:600">${esc(nomeRefeicao(l))}</strong>
-              ${l.status === 'pulada'
-                ? ' <span style="color:var(--tinta-fraca)">— pulada</span>'
-                : `<br><span style="color:var(--tinta-dim)">${esc(escolhasTexto(l))}</span>${
-                    l.completa === false && (l.faltou || []).length
-                      ? `<br><span style="color:var(--ambar);font-size:12.5px">faltou ${esc(fmt.lista(l.faltou))}</span>`
-                      : ''}`}
-            </span>
+          <div class="refeicao-dia ${l.status === 'feita' ? 'feita' : ''}">
+            <div class="refeicao-topo">
+              <span class="refeicao-nome">${esc(nomeRefeicao(l))}</span>
+              <span class="li-fim num">${esc(l.hora)}</span>
+            </div>
+            ${l.status === 'pulada'
+              ? `<div class="refeicao-pede">Não foi feita.</div>`
+              : linhasEscolhaHTML(l) + (l.completa === false && (l.faltou || []).length
+                  ? `<div class="escolha-falta">faltou ${esc(fmt.lista(l.faltou))}</div>` : '')}
           </div>`).join('')}
       </div>`;
   }).join('');

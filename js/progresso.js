@@ -177,47 +177,86 @@ function graficoPeso(pesos) {
     return svgVazio(`Primeira pesagem: ${fmt.peso(pesos[0].peso)}. Com a próxima, a curva aparece.`);
   }
 
-  const mX = 16, mT = 20, mB = 26;
+  const H = 230;                       // mais alto que os outros: cabe rótulo em cada ponto
+  const mX = 26, mT = 30, mB = 30;
   const vals = pesos.map(p => p.peso);
   const meta = perfil().pesoMeta;
   const min = Math.min(...vals, meta ?? Infinity) - .5;
   const max = Math.max(...vals, meta ?? -Infinity) + .5;
   const span = Math.max(.1, max - min);
-
-  const x = i => mX + (i / (pesos.length - 1)) * (GW - mX * 2);
-  const y = v => mT + (1 - (v - min) / span) * (GH - mT - mB);
   const cor = p => (ORIGEM_PESO[p.origem] || ORIGEM_PESO.casa).cor;
 
-  const linha = pesos.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p.peso).toFixed(1)}`).join(' ');
-  const area = `${linha} L${x(pesos.length - 1).toFixed(1)},${GH - mB} L${x(0).toFixed(1)},${GH - mB} Z`;
+  // ── Eixo X pelo TEMPO real, não pela ordem ──────────────────────
+  // As duas pesagens de uma sessão são do mesmo dia: ficam grudadas. Uma
+  // semana até a sessão seguinte abre um vão. É assim que o gráfico conta
+  // que aquele degrau aconteceu numa tarde, não ao longo de dias.
+  const DENTRO_DO_DIA = 13;            // afastamento entre pontos do mesmo dia
+  const t0 = deData(pesos[0].data).getTime();
+  const t1 = deData(pesos[pesos.length - 1].data).getTime();
+  const util = GW - mX * 2 - DENTRO_DO_DIA;
 
-  // Só mostra na legenda as origens que realmente aparecem no período
-  const usadas = [...new Set(pesos.map(p => p.origem || 'casa'))]
-    .filter(o => ORIGEM_PESO[o]);
+  const porData = {};
+  pesos.forEach(p => { (porData[p.data] = porData[p.data] || []).push(p); });
+
+  const px = pesos.map(p => {
+    const base = t1 === t0
+      ? mX + util / 2
+      : mX + DENTRO_DO_DIA / 2 + ((deData(p.data).getTime() - t0) / (t1 - t0)) * util;
+    const irmaos = porData[p.data];
+    const i = irmaos.indexOf(p);
+    return base + (i - (irmaos.length - 1) / 2) * DENTRO_DO_DIA;
+  });
+  const py = pesos.map(p => mT + (1 - (p.peso - min) / span) * (H - mT - mB));
+
+  const linha = pesos.map((p, i) => `${i ? 'L' : 'M'}${px[i].toFixed(1)},${py[i].toFixed(1)}`).join(' ');
+  const area = `${linha} L${px[px.length - 1].toFixed(1)},${H - mB} L${px[0].toFixed(1)},${H - mB} Z`;
+
+  // ── Rótulos: um por ponto, sem colidir ──────────────────────────
+  // Saída da sessão vai por baixo, o resto por cima — o par da sessão se
+  // separa sozinho. Se ainda assim dois vizinhos se encostam, o segundo sobe
+  // (ou desce) mais um degrau.
+  const rotulos = [];
+  pesos.forEach((p, i) => {
+    const abaixo = p.origem === 'sessao-saida';
+    let dy = abaixo ? 15 : -10;
+    for (const r of rotulos) {
+      if (Math.abs(r.x - px[i]) < 32 && Math.abs((r.y) - (py[i] + dy)) < 11) {
+        dy += abaixo ? 12 : -12;
+      }
+    }
+    rotulos.push({
+      x: px[i], y: py[i] + dy, cor: cor(p),
+      txt: p.peso.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }),
+    });
+  });
+
+  const usadas = [...new Set(pesos.map(p => p.origem || 'casa'))].filter(o => ORIGEM_PESO[o]);
 
   return `
-    <svg class="grafico" viewBox="0 0 ${GW} ${GH}" role="img" aria-label="Evolução do peso">
+    <svg class="grafico" viewBox="0 0 ${GW} ${H}" role="img" aria-label="Evolução do peso">
       <defs>
         <linearGradient id="gp" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%"   stop-color="#D2648B" stop-opacity=".2"/>
+          <stop offset="0%"   stop-color="#D2648B" stop-opacity=".18"/>
           <stop offset="100%" stop-color="#D2648B" stop-opacity="0"/>
         </linearGradient>
       </defs>
       ${meta != null ? `
-        <line x1="${mX}" y1="${y(meta).toFixed(1)}" x2="${GW - mX}" y2="${y(meta).toFixed(1)}"
+        <line x1="${mX - 8}" y1="${(mT + (1 - (meta - min) / span) * (H - mT - mB)).toFixed(1)}"
+              x2="${GW - mX + 8}" y2="${(mT + (1 - (meta - min) / span) * (H - mT - mB)).toFixed(1)}"
               stroke="#8A6FC7" stroke-width="1.4" stroke-dasharray="5 5" opacity=".55"/>
-        <text x="${GW - mX}" y="${(y(meta) - 6).toFixed(1)}" text-anchor="end"
-              font-size="11" fill="#8A6FC7" ${FONTE_SVG}>meta ${esc(String(meta))} kg</text>` : ''}
+        <text x="${GW - mX + 8}" y="${(mT + (1 - (meta - min) / span) * (H - mT - mB) - 6).toFixed(1)}"
+              text-anchor="end" font-size="10.5" fill="#8A6FC7" ${FONTE_SVG}>meta ${esc(String(meta))} kg</text>` : ''}
       <path d="${area}" fill="url(#gp)"/>
-      <path d="${linha}" fill="none" stroke="#D2648B" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" opacity=".85"/>
-      ${pesos.map((p, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(p.peso).toFixed(1)}"
-          r="${i === pesos.length - 1 ? 5 : 3.4}" fill="#fff" stroke="${cor(p)}" stroke-width="2.4">
+      <path d="${linha}" fill="none" stroke="#D2648B" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" opacity=".8"/>
+      ${pesos.map((p, i) => `<circle cx="${px[i].toFixed(1)}" cy="${py[i].toFixed(1)}"
+          r="${i === pesos.length - 1 ? 5 : 3.8}" fill="#fff" stroke="${cor(p)}" stroke-width="2.4">
           <title>${esc(fmt.data(p.data))} · ${esc(fmt.peso(p.peso))} · ${esc((ORIGEM_PESO[p.origem] || ORIGEM_PESO.casa).rotulo)}</title>
         </circle>`).join('')}
-      <text x="${x(pesos.length - 1).toFixed(1)}" y="${(y(vals[vals.length - 1]) - 11).toFixed(1)}" text-anchor="end"
-            font-size="12" font-weight="600" fill="${cor(pesos[pesos.length - 1])}" ${FONTE_SVG}>${esc(fmt.peso(vals[vals.length - 1]))}</text>
-      <text x="${mX}" y="${GH - 6}" font-size="11" fill="#B9B0C0" ${FONTE_SVG}>${esc(fmt.curta(pesos[0].data))}</text>
-      <text x="${GW - mX}" y="${GH - 6}" text-anchor="end" font-size="11" fill="#B9B0C0" ${FONTE_SVG}>${esc(fmt.curta(pesos[pesos.length - 1].data))}</text>
+      ${rotulos.map(r => `<text x="${r.x.toFixed(1)}" y="${r.y.toFixed(1)}" text-anchor="middle"
+          font-size="10.5" font-weight="700" fill="${r.cor}" ${FONTE_SVG}>${esc(r.txt)}</text>`).join('')}
+      <text x="${mX - 8}" y="${H - 8}" font-size="10.5" fill="#B9B0C0" ${FONTE_SVG}>${esc(fmt.curta(pesos[0].data))}</text>
+      ${t1 !== t0 ? `<text x="${GW - mX + 8}" y="${H - 8}" text-anchor="end" font-size="10.5"
+          fill="#B9B0C0" ${FONTE_SVG}>${esc(fmt.curta(pesos[pesos.length - 1].data))}</text>` : ''}
     </svg>
     ${usadas.length > 1 ? `
       <div class="legenda-peso">

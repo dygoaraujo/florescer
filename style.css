@@ -756,6 +756,14 @@ input, select, textarea { font-size: 16px; }   /* < 16px faz o iOS dar zoom no f
 }
 .pe-txt { font-size: 12.5px; color: var(--tinta-dim); }
 .pe-txt strong { color: var(--tinta); font-weight: 700; }
+.pe-progresso.pronto .pe-txt strong { color: var(--folha); }
+
+/* Chama atenção pro confirmar depois de rolar até ele */
+@keyframes pulsa {
+  0%, 100% { transform: none; box-shadow: 0 4px 14px rgba(210,100,139,.28); }
+  35%      { transform: scale(1.03); box-shadow: 0 6px 22px rgba(210,100,139,.42); }
+}
+.btn.pulsa { animation: pulsa .7s cubic-bezier(.2,.8,.3,1) 2; }
 
 .aviso-falta {
   margin-top: 10px;
@@ -854,6 +862,50 @@ input, select, textarea { font-size: 16px; }   /* < 16px faz o iOS dar zoom no f
   color: var(--tinta-dim);
   white-space: pre-wrap;
   user-select: all;
+}
+
+/* ── Refeição no histórico e no dia ─────────────────────────────
+   Uma linha por grupo, com o rótulo à esquerda: dá pra bater o olho e ver o
+   que entrou em cada parte do prato, em vez de ler uma frase de dez alimentos. */
+
+.refeicao-dia { padding: 14px 0; border-bottom: 1px solid var(--linha); }
+.refeicao-dia:last-child { border-bottom: none; padding-bottom: 0; }
+.refeicao-dia:first-child { padding-top: 0; }
+.refeicao-topo { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+.refeicao-nome { font-size: 15px; font-weight: 700; }
+.refeicao-topo .pill, .refeicao-topo .li-fim { margin-left: auto; flex-shrink: 0; }
+.refeicao-pede { font-size: 13px; color: var(--tinta-fraca); line-height: 1.5; }
+
+.escolhas { display: flex; flex-direction: column; gap: 6px; }
+.escolha-linha {
+  display: flex;
+  gap: 9px;
+  font-size: 13px;
+  line-height: 1.45;
+  padding-left: 11px;
+  position: relative;
+}
+.escolha-linha::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 7px;
+  width: 4px; height: 4px;
+  border-radius: 50%;
+  background: var(--rosa);
+}
+.escolha-grupo {
+  flex: 0 0 33%;
+  max-width: 33%;
+  color: var(--tinta-fraca);
+  font-weight: 600;
+  font-size: 12px;
+}
+.escolha-itens { flex: 1; min-width: 0; color: var(--tinta-dim); }
+.escolha-falta {
+  margin-top: 8px;
+  padding-left: 11px;
+  font-size: 12.5px;
+  color: #A8701E;
 }
 
 .vazio {
