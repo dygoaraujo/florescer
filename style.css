@@ -1210,6 +1210,34 @@ button.cal-d:active { background: var(--bruma); transform: scale(.92); }
 .peso-input { -moz-appearance: textfield; appearance: textfield; }
 .peso-un { font-size: 14px; font-weight: 600; color: var(--tinta-dim); flex-shrink: 0; }
 
+/* Relógio do fim do dia */
+.sono-relogio {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  padding: 22px 0 8px;
+}
+.sono-hora {
+  font-family: var(--display);
+  font-variation-settings: 'SOFT' 100, 'WONK' 1, 'opsz' 72;
+  font-weight: 500;
+  font-size: 46px;
+  line-height: 1;
+  color: var(--ceu-forte);
+  min-width: 128px;
+  text-align: center;
+}
+.sono-relogio .peso-btn { background: var(--ceu-veu); color: var(--ceu-forte); }
+.sono-relogio .peso-btn:active { background: var(--ceu); }
+.sono-obs {
+  text-align: center;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--tinta-dim);
+  padding: 0 12px 6px;
+}
+
 .linha-peso {
   display: flex;
   align-items: center;

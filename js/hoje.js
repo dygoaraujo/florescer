@@ -172,8 +172,8 @@ function cardAgoraHTML(i) {
     oque = 'Escolha o que você fez hoje.';
     acoes = `<button class="btn btn-cheio btn-lavanda" onclick="abrirExercicio()">Registrar treino</button>`;
   } else if (i.tipo === 'dormir') {
-    oque = 'Toque quando estiver deitada — o app guarda a hora que você foi dormir.';
-    acoes = `<button class="btn btn-cheio btn-ceu" onclick="registrarSono()">Fui dormir</button>`;
+    oque = 'Feche o dia quando estiver deitada — o app guarda a hora.';
+    acoes = `<button class="btn btn-cheio btn-ceu" onclick="abrirSono()">Vou dormir</button>`;
   } else {
     const etapa = etapaSessao(i.ref);
     oque = etapa === 'chegada'
@@ -240,7 +240,7 @@ function abrirItem(tipo, id) {
   if (tipo === 'refeicao') return abrirRefeicao(id);
   if (tipo === 'remedio')  return abrirMedicamento(id);
   if (tipo === 'treino')   return abrirExercicio();
-  if (tipo === 'dormir')   return alternarSono();
+  if (tipo === 'dormir')   return abrirSono();
   return abrirSessao(id);
 }
 
@@ -252,24 +252,80 @@ function diaDoSono() {
   return agora.getHours() < 5 ? somaDias(dataLocal(agora), -1) : dataLocal(agora);
 }
 
-function registrarSono() {
+let sonoHora = null;
+
+/** Fecha o dia. Abre com a hora de agora, mas ajustável: muita gente lembra de
+ *  marcar meia hora depois de já estar deitada, e aí o registro sairia errado. */
+function abrirSono() {
+  const data = diaDoSono();
+  const log = (DB.get('logSono') || []).find(l => l.data === data);
+  sonoHora = log ? log.hora : horaLocal();
+
+  abrirSheet('<div class="sheet-alca"></div><div id="sono-cx"></div>', () => RENDER.hoje());
+  renderSono();
+}
+
+function renderSono() {
+  const cx = document.getElementById('sono-cx');
+  if (!cx) return;
+  const data = diaDoSono();
+  const log = (DB.get('logSono') || []).find(l => l.data === data);
+  const agora = horaLocal();
+
+  cx.innerHTML = `
+    <div class="sheet-cabeca">
+      <div style="flex:1;min-width:0">
+        <h2>Fim do dia</h2>
+        <div class="dica">${log ? `Você registrou que deitou às ${esc(log.hora)}.`
+                                : `São ${esc(agora)} agora.`}</div>
+      </div>
+      <button class="sheet-x" onclick="fecharSheet()" aria-label="Fechar">✕</button>
+    </div>
+
+    <div class="sheet-corpo">
+      <div class="sono-relogio">
+        <button class="peso-btn" onclick="ajustarSono(-5)" aria-label="5 minutos antes">−</button>
+        <span class="sono-hora num">${esc(sonoHora)}</span>
+        <button class="peso-btn" onclick="ajustarSono(5)" aria-label="5 minutos depois">+</button>
+      </div>
+      <p class="sono-obs">${sonoHora === agora
+        ? 'Se você já está deitada há um tempo, ajuste no − para a hora certa.'
+        : 'Ajustado. Toque em − ou + para mudar de novo.'}</p>
+    </div>
+
+    <div class="sheet-pe">
+      <button class="btn btn-cheio btn-ceu" style="width:100%" onclick="confirmarSono()">
+        ${log ? `Salvar ${esc(sonoHora)}` : 'Vou dormir agora'}
+      </button>
+      ${log ? `<button class="link-fraco" onclick="desmarcarSono()">Desmarcar</button>` : ''}
+    </div>`;
+}
+
+function ajustarSono(delta) {
+  const m = (minutosDe(sonoHora) + delta + 24 * 60) % (24 * 60);
+  sonoHora = `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+  renderSono();
+}
+
+function confirmarSono() {
+  registrarSono(sonoHora);
+  fecharSheet();
+}
+
+function registrarSono(hora) {
   const data = diaDoSono();
   const logs = (DB.get('logSono') || []).filter(l => l.data !== data);
-  const hora = horaLocal();
-  logs.push({ id: uid(), data, hora });
+  const h = hora || horaLocal();
+  logs.push({ id: uid(), data, hora: h });
   DB.set('logSono', logs);
-  toast(`Boa noite 🌙 · deitou às ${hora}`);
+  toast(`Boa noite 🌙 · deitou às ${h}`);
   RENDER.hoje();
 }
 
-function alternarSono() {
-  const data = diaDoSono();
-  const log = (DB.get('logSono') || []).find(l => l.data === data);
-  if (!log) return registrarSono();
-  confirmar('Desmarcar', `Você registrou que deitou às ${log.hora}.`, 'Desmarcar', () => {
-    DB.set('logSono', (DB.get('logSono') || []).filter(l => l.data !== data));
-    RENDER.hoje();
-  });
+function desmarcarSono() {
+  DB.set('logSono', (DB.get('logSono') || []).filter(l => l.data !== diaDoSono()));
+  fecharSheet();
+  RENDER.hoje();
 }
 
 // ══ ÁGUA — card fixo, nunca abre outra tela ════════════════════

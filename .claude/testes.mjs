@@ -519,6 +519,18 @@ console.log('\n── Horário real e sono ────────────�
   eq('registrar sono grava um dia só', run(ctx, "DB.get('logSono').length"), 1);
   run(ctx, "registrarSono();");
   eq('registrar de novo substitui, não duplica', run(ctx, "DB.get('logSono').length"), 1);
+
+  // O sheet abre na hora de agora, mas ela pode ter deitado antes de marcar
+  run(ctx, "abrirSono(); sonoHora = '23:30';");
+  eq('ajusta 5 min pra trás', run(ctx, "ajustarSono(-5); sonoHora"), '23:25');
+  eq('e pra frente', run(ctx, "ajustarSono(15); sonoHora"), '23:40');
+  eq('vira a meia-noite sem quebrar', run(ctx, "sonoHora = '23:55'; ajustarSono(10); sonoHora"), '00:05');
+  eq('e volta pra trás da meia-noite', run(ctx, "sonoHora = '00:05'; ajustarSono(-10); sonoHora"), '23:55');
+  run(ctx, "sonoHora = '22:40'; confirmarSono();");
+  eq('confirma com a hora ajustada, não com a de agora',
+     run(ctx, "DB.get('logSono').find(l => l.data === diaDoSono()).hora"), '22:40');
+  run(ctx, "desmarcarSono();");
+  eq('desmarcar limpa o dia', run(ctx, "DB.get('logSono').some(l => l.data === diaDoSono())"), false);
   eq('o item Dormir entra no fio', run(ctx, `
     itensDoDia(hoje()).some(i => i.tipo === 'dormir');
   `), true);
