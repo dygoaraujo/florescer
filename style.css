@@ -233,6 +233,16 @@ input, select, textarea { font-size: 16px; }   /* < 16px faz o iOS dar zoom no f
   transition: transform .5s cubic-bezier(.2,.8,.3,1);
 }
 
+.agua-extra {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ceu-forte);
+  margin: -6px 0 13px;
+  animation: sobe .3s cubic-bezier(.2,.8,.3,1);
+}
+.agua-extra.ouro { color: var(--ouro-forte); }
+
 .agua-btns { display: flex; gap: 7px; }
 .agua-btns button {
   flex: 1;
@@ -316,8 +326,11 @@ input, select, textarea { font-size: 16px; }   /* < 16px faz o iOS dar zoom no f
   flex-shrink: 0;
   width: 38px;
 }
+.no-cat { flex-shrink: 0; display: flex; color: var(--tinta-fraca); opacity: .8; }
+.no-cat svg { width: 16px; height: 16px; }
 .no-nome { font-size: 15px; font-weight: 500; flex: 1; min-width: 0; }
 .no-ic { flex-shrink: 0; color: var(--tinta-fraca); display: flex; }
+.no.feito .no-cat { color: var(--rosa); opacity: 1; }
 
 .no.feito .no-nome  { color: var(--tinta-dim); }
 .no.feito .no-ic    { color: var(--rosa-forte); }
@@ -348,6 +361,8 @@ input, select, textarea { font-size: 16px; }   /* < 16px faz o iOS dar zoom no f
   margin-bottom: 9px;
 }
 .card-agora .quando .h { color: var(--tinta-fraca); font-variant-numeric: tabular-nums; letter-spacing: .06em; }
+.card-agora .quando-ic { display: flex; }
+.card-agora .quando-ic svg { width: 15px; height: 15px; }
 .card-agora.tarde .quando { color: var(--ambar); }
 .card-agora h3 {
   font-family: var(--display);
@@ -570,6 +585,111 @@ input, select, textarea { font-size: 16px; }   /* < 16px faz o iOS dar zoom no f
 }
 .chip.on::before { content: '✓'; font-size: 12px; }
 .chip.travado { opacity: .38; }
+.chip.on { animation: chip-pop .28s cubic-bezier(.34,1.56,.64,1); }
+@keyframes chip-pop { 0% { transform: scale(.9); } 55% { transform: scale(1.06); } 100% { transform: none; } }
+
+/* a medida que a dieta manda, presa ao próprio alimento */
+.chip-med {
+  font-style: normal;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--tinta-fraca);
+  font-variant-numeric: tabular-nums;
+}
+.chip.on .chip-med { color: var(--rosa-forte); opacity: .75; }
+
+.grupo-obs {
+  font-size: 12.5px;
+  color: var(--tinta-dim);
+  line-height: 1.5;
+  margin: -3px 0 10px;
+}
+
+/* Busca dentro de grupos grandes (proteínas, frutas, Grupo A…) */
+.busca-grupo {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 14px;
+  margin-bottom: 10px;
+  border-radius: 13px;
+  border: 1.5px solid var(--linha-forte);
+  background: var(--nuvem);
+  font-size: 16px;
+}
+.busca-grupo:focus { outline: none; border-color: var(--lavanda-forte); }
+.sem-achado { font-size: 13.5px; color: var(--tinta-fraca); padding: 4px 2px; }
+
+/* O que ela já escolheu, com a quantidade ajustável */
+.escolhido {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  margin-bottom: 8px;
+  border-radius: 15px;
+  background: var(--rosa-veu);
+  animation: escolhido-in .3s cubic-bezier(.2,.8,.3,1);
+}
+@keyframes escolhido-in {
+  from { opacity: 0; transform: translateY(-5px); }
+  to   { opacity: 1; transform: none; }
+}
+.esc-nome { flex: 1; min-width: 0; font-size: 14.5px; font-weight: 600; color: var(--rosa-forte); }
+.esc-livre { font-size: 12.5px; font-weight: 600; color: var(--rosa-forte); opacity: .7; }
+.esc-x {
+  flex-shrink: 0;
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  color: var(--rosa-forte);
+  opacity: .55;
+  font-size: 13px;
+}
+.esc-x:active { opacity: 1; background: rgba(210,100,139,.12); }
+
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--nuvem);
+  border-radius: 12px;
+  padding: 3px;
+  flex-shrink: 0;
+}
+.stepper button {
+  width: 34px; height: 34px;
+  border-radius: 9px;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--rosa-forte);
+  line-height: 1;
+  transition: background .15s ease, transform .1s ease;
+}
+.stepper button:active { background: var(--rosa-veu); transform: scale(.9); }
+.stepper-v {
+  min-width: 62px;
+  text-align: center;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--tinta);
+}
+
+.trocar {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--tinta-fraca);
+  padding: 6px 2px;
+}
+.trocar:active { color: var(--rosa-forte); }
+
+.aviso-falta {
+  margin-top: 10px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--tinta-dim);
+  background: var(--ambar-veu);
+  border-radius: 12px;
+  padding: 9px 12px;
+}
 
 /* ── Formulários ────────────────────────────────────────────── */
 
@@ -613,6 +733,20 @@ input, select, textarea { font-size: 16px; }   /* < 16px faz o iOS dar zoom no f
   box-shadow: inset 0 0 0 2px var(--lavanda-forte);
   color: var(--lavanda-forte);
 }
+.toggle-forma { gap: 7px; }
+.toggle-forma svg { width: 17px; height: 17px; }
+
+/* Gota e cápsula: dá pra saber o que é sem abrir */
+.med-ic {
+  flex-shrink: 0;
+  width: 36px; height: 36px;
+  border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--lavanda-veu);
+  color: var(--lavanda-forte);
+}
+.med-ic.gotas { background: var(--ceu-veu); color: var(--ceu-forte); }
+.med-ic svg { width: 18px; height: 18px; }
 
 /* ── Listas ─────────────────────────────────────────────────── */
 
@@ -713,8 +847,24 @@ input, select, textarea { font-size: 16px; }   /* < 16px faz o iOS dar zoom no f
   font-weight: 500; font-size: 20px; margin-bottom: 7px;
 }
 .confirma-cx p { font-size: 14px; color: var(--tinta-dim); line-height: 1.55; }
+.confirma-aviso {
+  margin-top: 12px;
+  padding: 9px 12px;
+  border-radius: 12px;
+  background: var(--ambar-veu);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: #A8701E;
+}
 .confirma-btns { display: flex; gap: 9px; margin-top: 20px; }
 .confirma-btns .btn { flex: 1; }
+.btn-perigo { background: var(--ambar); box-shadow: 0 4px 14px rgba(224,166,78,.3); }
+.btn-cheio.armado {
+  background: #C4453F;
+  box-shadow: 0 4px 16px rgba(196,69,63,.34);
+  animation: arma .3s cubic-bezier(.34,1.56,.64,1);
+}
+@keyframes arma { 0% { transform: scale(.96); } 60% { transform: scale(1.04); } 100% { transform: none; } }
 
 /* ── Gráficos ───────────────────────────────────────────────── */
 
@@ -828,6 +978,161 @@ input, select, textarea { font-size: 16px; }   /* < 16px faz o iOS dar zoom no f
 .cal-d.sessao { background: var(--lavanda-veu); font-weight: 600; color: var(--lavanda-forte); }
 .cal-d.sessao.feita { background: var(--folha-veu); color: #3F7A5E; }
 .cal-d .ponto { width: 4px; height: 4px; border-radius: 50%; background: currentColor; }
+
+/* ── Sessão na clínica ──────────────────────────────────────── */
+
+.trilha {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 20px;
+}
+.trilha-passo {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--tinta-fraca);
+  text-align: center;
+  transition: color .3s ease;
+}
+.trilha-bola {
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bruma);
+  font-size: 12px;
+  font-weight: 700;
+  transition: all .35s cubic-bezier(.2,.8,.3,1);
+}
+.trilha-passo.ok   { color: var(--lavanda-forte); }
+.trilha-passo.ok .trilha-bola { background: var(--lavanda-forte); color: #fff; }
+.trilha-passo.agora { color: var(--rosa-forte); }
+.trilha-passo.agora .trilha-bola {
+  background: var(--rosa-forte); color: #fff;
+  box-shadow: 0 0 0 4px var(--rosa-veu);
+}
+
+.etapa-cx {
+  background: var(--bruma);
+  border-radius: var(--r-md);
+  padding: 17px;
+  margin-bottom: 14px;
+}
+.etapa-dica { font-size: 12.5px; color: var(--tinta-dim); line-height: 1.5; margin-bottom: 14px; }
+
+.peso-campo {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--nuvem);
+  border-radius: 16px;
+  padding: 6px;
+}
+.peso-btn {
+  width: 46px; height: 46px;
+  flex-shrink: 0;
+  border-radius: 12px;
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--rosa-forte);
+  line-height: 1;
+  transition: background .15s ease, transform .1s ease;
+}
+.peso-btn:active { background: var(--rosa-veu); transform: scale(.9); }
+.peso-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: none;
+  text-align: right;
+  font-family: var(--display);
+  font-variation-settings: 'SOFT' 100, 'opsz' 48;
+  font-size: 28px;
+  font-weight: 500;
+  padding: 0;
+  min-height: 0;
+}
+.peso-input:focus { outline: none; }
+.peso-input::-webkit-outer-spin-button,
+.peso-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.peso-input { -moz-appearance: textfield; appearance: textfield; }
+.peso-un { font-size: 14px; font-weight: 600; color: var(--tinta-dim); flex-shrink: 0; }
+
+.linha-peso {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 16px;
+  margin-bottom: 12px;
+  border-radius: var(--r-md);
+  background: var(--folha-veu);
+  font-size: 13.5px;
+  color: #3F7A5E;
+}
+.linha-peso strong { margin-left: auto; font-size: 15px; }
+
+.sessao-fecho {
+  text-align: center;
+  padding: 18px;
+  border-radius: var(--r-md);
+  background: linear-gradient(160deg, var(--lavanda-veu), var(--nuvem) 70%);
+}
+.sessao-fecho .num {
+  font-family: var(--display);
+  font-variation-settings: 'SOFT' 100, 'opsz' 60;
+  font-size: 30px; font-weight: 500;
+  color: var(--lavanda-forte);
+}
+.sessao-fecho p { font-size: 12.5px; color: var(--tinta-dim); margin-top: 3px; }
+
+.nota-grafico {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 14px;
+  padding-top: 13px;
+  border-top: 1px solid var(--linha);
+  font-size: 12.5px;
+  color: var(--tinta-dim);
+}
+.nota-grafico-obs { font-size: 11.5px; color: var(--tinta-fraca); }
+
+/* ── Pétalas ────────────────────────────────────────────────── */
+
+.petalas {
+  position: fixed; inset: 0;
+  z-index: 90;
+  pointer-events: none;
+  overflow: hidden;
+}
+.petalas i {
+  position: absolute;
+  top: -24px;
+  width: 13px; height: 13px;
+  border-radius: 50% 0 50% 50%;
+  background: var(--rosa);
+  opacity: 0;
+  animation: cair linear forwards;
+}
+.petalas i:nth-child(3n)   { background: var(--lavanda); width: 10px; height: 10px; }
+.petalas i:nth-child(4n)   { background: var(--ouro);    width: 8px;  height: 8px; }
+@keyframes cair {
+  0%   { opacity: 0; transform: translateY(0) rotate(0deg); }
+  10%  { opacity: .95; }
+  85%  { opacity: .8; }
+  100% { opacity: 0; transform: translateY(104vh) rotate(var(--giro, 360deg)); }
+}
+
+/* ── Marcar concluído: o traço do ✓ se desenhando ───────────── */
+.no.feito .no-ic svg path {
+  stroke-dasharray: 26;
+  stroke-dashoffset: 26;
+  animation: risca .45s .05s cubic-bezier(.6,0,.3,1) forwards;
+}
+@keyframes risca { to { stroke-dashoffset: 0; } }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

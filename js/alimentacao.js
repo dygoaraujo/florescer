@@ -32,24 +32,37 @@ RENDER.alimentacao = function () {
 
 function verComida(v) { vistaComida = v; RENDER.alimentacao(); }
 
-/** Nomes dos alimentos escolhidos num log, mesmo se a dieta mudou depois. */
-function escolhasTexto(log) {
+/** O registro guarda nome e medida de cada item, então o histórico continua
+ *  legível mesmo depois de a nutricionista trocar o plano inteiro. */
+function itensEscolhidos(log) {
   const dieta = (DB.get('dietas') || []).find(d => d.id === log.dietaId);
   const ref = dieta && dieta.refeicoes.find(r => r.id === log.refeicaoId);
-  if (!ref) return '';
-  const nomes = [];
+  const itens = [];
+
   (log.escolhas || []).forEach(e => {
-    const g = ref.grupos.find(x => x.id === e.grupoId);
-    if (!g) return;
-    e.opcaoIds.forEach(oid => {
-      const o = g.opcoes.find(x => x.id === oid);
-      if (o) nomes.push(o.nome);
+    const g = ref && ref.grupos.find(x => x.id === e.grupoId);
+    const lista = e.itens || (e.opcaoIds || []).map(id => ({ opcaoId: id }));   // formato antigo
+    lista.forEach(it => {
+      const o = g && g.opcoes.find(x => x.id === it.opcaoId);
+      itens.push({
+        nome: it.nome || (o ? o.nome : '—'),
+        medida: it.medida || (o ? o.medida : null),
+      });
     });
   });
-  return fmt.lista(nomes);
+  return itens;
+}
+
+/** "Patinho 150 g, arroz 50 g e alface" */
+function escolhasTexto(log) {
+  return fmt.lista(itensEscolhidos(log).map(it => {
+    const m = medidaTexto(it.medida);
+    return m && it.medida && it.medida.valor != null ? `${it.nome} ${m}` : it.nome;
+  }));
 }
 
 function nomeRefeicao(log) {
+  if (log.refeicaoNome) return log.refeicaoNome;
   const dieta = (DB.get('dietas') || []).find(d => d.id === log.dietaId);
   const ref = dieta && dieta.refeicoes.find(r => r.id === log.refeicaoId);
   return ref ? ref.nome : 'Refeição';
@@ -67,9 +80,14 @@ function comidaHojeHTML() {
       const l = logs.find(x => x.refeicaoId === r.id);
       const pediu = r.grupos.map(g => `${g.qtd} ${g.nome.toLowerCase()}`).join(' · ');
       let sub, marca;
-      if (!l)                       { sub = pediu;               marca = `<span class="pill">a fazer</span>`; }
-      else if (l.status === 'pulada') { sub = 'não foi feita';    marca = `<span class="pill">pulada</span>`; }
-      else                          { sub = escolhasTexto(l) || pediu; marca = `<span class="pill pill-folha">${esc(l.hora)}</span>`; }
+      if (!l)                         { sub = pediu;            marca = `<span class="pill">a fazer</span>`; }
+      else if (l.status === 'pulada') { sub = 'não foi feita';  marca = `<span class="pill">pulada</span>`; }
+      else {
+        sub = escolhasTexto(l) || pediu;
+        marca = l.completa === false
+          ? `<span class="pill pill-ambar">incompleta</span>`
+          : `<span class="pill pill-folha">${esc(l.hora)}</span>`;
+      }
       return `<div class="lista-item">
         <span class="li-txt">
           <span class="li-nome">${esc(r.nome)}</span>
@@ -108,7 +126,10 @@ function comidaHistoricoHTML() {
               <strong style="font-weight:600">${esc(nomeRefeicao(l))}</strong>
               ${l.status === 'pulada'
                 ? ' <span style="color:var(--tinta-fraca)">— pulada</span>'
-                : `<br><span style="color:var(--tinta-dim)">${esc(escolhasTexto(l))}</span>`}
+                : `<br><span style="color:var(--tinta-dim)">${esc(escolhasTexto(l))}</span>${
+                    l.completa === false && (l.faltou || []).length
+                      ? `<br><span style="color:var(--ambar);font-size:12.5px">faltou ${esc(fmt.lista(l.faltou))}</span>`
+                      : ''}`}
             </span>
           </div>`).join('')}
       </div>`;

@@ -54,6 +54,7 @@ RENDER.ajustes = function () {
     <div class="cartao">
       ${meds.length ? meds.map(m => `
         <button class="lista-item" onclick="editarMedicamento('${esc(m.id)}')">
+          <span class="med-ic ${m.forma === 'gotas' ? 'gotas' : ''}">${m.forma === 'gotas' ? IC.gota : IC.capsula}</span>
           <span class="li-txt">
             <span class="li-nome">${esc(m.nome)}${m.ativo ? '' : ' <span class="pill">pausado</span>'}</span>
             <span class="li-sub">${esc([m.dose, freqTexto(m)].filter(Boolean).join(' · '))}</span>
@@ -66,12 +67,17 @@ RENDER.ajustes = function () {
 
     <div class="sec"><h2>Metas do dia</h2></div>
     <div class="cartao">
-      <div class="campo">
-        <label for="aj-agua">Meta de água por dia</label>
-        <div style="display:flex;gap:9px;align-items:center">
+      <div class="campo-dupla">
+        <div class="campo">
+          <label for="aj-agua">Água — meta (ml)</label>
           <input id="aj-agua" type="number" inputmode="numeric" step="100" min="500" max="8000"
                  value="${p.metaAgua}" onchange="salvarPerfil('metaAgua', Number(this.value))">
-          <span style="color:var(--tinta-dim);font-size:14px;flex-shrink:0">ml</span>
+        </div>
+        <div class="campo">
+          <label for="aj-agua2">Água — ideal (ml)</label>
+          <input id="aj-agua2" type="number" inputmode="numeric" step="100" min="500" max="8000"
+                 value="${p.metaAguaIdeal ?? ''}" placeholder="opcional"
+                 onchange="salvarPerfil('metaAguaIdeal', this.value === '' ? null : Number(this.value))">
         </div>
       </div>
       <div class="campo">
@@ -187,9 +193,10 @@ function novoTipoExercicio() {
 }
 
 function removerTipoExercicio(t) {
-  const tipos = (DB.get('exercicios') || []).filter(x => x !== t);
-  DB.set('exercicios', tipos);
-  RENDER.ajustes();
+  confirmar('Tirar tipo de treino', `"${t}" sai da lista. Os treinos já registrados continuam.`, 'Tirar', () => {
+    DB.set('exercicios', (DB.get('exercicios') || []).filter(x => x !== t));
+    RENDER.ajustes();
+  });
 }
 
 /** Sheet genérico de um campo só. */
@@ -332,7 +339,7 @@ function removerGrupo(gi) {
   const r0 = refEditando();
   if (!r0 || !r0.grupos[gi]) return;
   confirmar('Remover grupo', `"${r0.grupos[gi].nome}" sai desta refeição. O histórico já registrado continua intacto.`, 'Remover',
-    () => mexerNaRefeicao(r => { r.grupos.splice(gi, 1); }));
+    () => mexerNaRefeicao(r => { r.grupos.splice(gi, 1); }), { duplo: true, perigo: true });
 }
 
 /** Enter no campo inline adiciona a opção e mantém o foco pra digitar a próxima. */
@@ -349,8 +356,15 @@ function novaOpcao(e, gi) {
   return false;
 }
 
+// Tirar UM alimento da lista é reversível e acontece o tempo todo enquanto se
+// monta o plano — confirmação simples. O que apaga estrutura (grupo, refeição,
+// medicamento, plano inteiro) é que pede dois toques.
 function removerOpcao(gi, oi) {
-  mexerNaRefeicao(r => { if (r.grupos[gi]) r.grupos[gi].opcoes.splice(oi, 1); });
+  const r0 = refEditando();
+  const o = r0 && r0.grupos[gi] && r0.grupos[gi].opcoes[oi];
+  if (!o) return;
+  confirmar('Tirar do plano', `"${o.nome}" sai das opções deste grupo.`, 'Tirar',
+    () => mexerNaRefeicao(r => { if (r.grupos[gi]) r.grupos[gi].opcoes.splice(oi, 1); }));
 }
 
 function removerRefeicao() {
@@ -361,7 +375,7 @@ function removerRefeicao() {
     dieta.refeicoes = dieta.refeicoes.filter(x => x.id !== edRefId);
     salvarDietaAtiva(dieta);
     fecharSheet();
-  });
+  }, { duplo: true, perigo: true });
 }
 
 // ── Versionamento do plano ───────────────────────────────────────
@@ -384,15 +398,20 @@ function novaVersaoDieta() {
       DB.set('dietas', dietas);
       toast('Nova versão criada');
       RENDER.ajustes();
-    });
+    }, { duplo: true });
 }
 
 function ativarDieta(id) {
-  const dietas = DB.get('dietas') || [];
-  dietas.forEach(d => { d.ativa = d.id === id; });
-  DB.set('dietas', dietas);
-  toast('Plano reativado');
-  RENDER.ajustes();
+  const alvo = (DB.get('dietas') || []).find(d => d.id === id);
+  if (!alvo) return;
+  confirmar('Reativar este plano',
+    `"${alvo.nome}" volta a valer no dia a dia, no lugar do plano de agora.`, 'Reativar', () => {
+      const dietas = DB.get('dietas') || [];
+      dietas.forEach(d => { d.ativa = d.id === id; });
+      DB.set('dietas', dietas);
+      toast('Plano reativado');
+      RENDER.ajustes();
+    }, { duplo: true });
 }
 
 // ══ MEDICAMENTOS ═══════════════════════════════════════════════
@@ -417,6 +436,14 @@ function editarMedicamento(id) {
         <div class="campo">
           <label for="md-nome">Nome</label>
           <input id="md-nome" type="text" required value="${esc(m?.nome || '')}" placeholder="Ex.: Vitamina D">
+        </div>
+        <div class="campo">
+          <label>Formato</label>
+          <div class="toggles" id="md-forma">
+            ${[['gotas', IC.gota, 'Gotas'], ['capsula', IC.capsula, 'Cápsula']].map(([v, ic, l]) => `
+              <button type="button" class="toggle toggle-forma ${(m?.forma || 'capsula') === v ? 'on' : ''}"
+                data-forma="${v}" onclick="escolherForma('${v}')">${ic}<span>${l}</span></button>`).join('')}
+          </div>
         </div>
         <div class="campo-dupla">
           <div class="campo">
@@ -477,11 +504,18 @@ function alternarAtivoMed(btn) {
   btn.textContent = on ? 'Em uso' : 'Pausado';
 }
 
+function escolherForma(v) {
+  document.querySelectorAll('#md-forma .toggle-forma')
+    .forEach(b => b.classList.toggle('on', b.dataset.forma === v));
+}
+
 function salvarMedicamento() {
   const freq = document.getElementById('md-freq').value;
   const ativoBtn = document.getElementById('md-ativo');
+  const formaOn = document.querySelector('#md-forma .toggle-forma.on');
   const reg = {
     id: edMedId || uid(),
+    forma: formaOn ? formaOn.dataset.forma : 'capsula',
     nome: document.getElementById('md-nome').value.trim(),
     dose: document.getElementById('md-dose').value.trim(),
     hora: document.getElementById('md-hora').value,
@@ -505,7 +539,7 @@ function removerMedicamento(id) {
   confirmar('Remover medicamento', 'Ele sai do dia a dia. O histórico do que já foi tomado continua.', 'Remover', () => {
     DB.set('medicamentos', (DB.get('medicamentos') || []).filter(m => m.id !== id));
     fecharSheet();
-  });
+  }, { duplo: true, perigo: true });
 }
 
 // ══ BACKUP ═════════════════════════════════════════════════════
@@ -536,7 +570,7 @@ function restaurarBackup(input) {
       CHAVES_DADOS.forEach(k => { if (dados[k] !== undefined && dados[k] !== null) DB.set(k, dados[k]); });
       toast('Backup restaurado');
       location.reload();
-    });
+    }, { duplo: true, perigo: true });
   };
   leitor.readAsText(arq);
   input.value = '';
@@ -546,5 +580,5 @@ function apagarTudo() {
   confirmar('Apagar todos os dados', 'Some tudo deste aparelho: plano, registros, pesos e sessões. Não dá para desfazer.', 'Apagar tudo', () => {
     Object.keys(localStorage).filter(k => k.startsWith('lo_')).forEach(k => localStorage.removeItem(k));
     location.reload();
-  }, { perigo: true });
+  }, { duplo: true, perigo: true });
 }

@@ -72,20 +72,109 @@ const IC = {
   treino:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><path d="M6.5 6.5v11M17.5 6.5v11M3.5 9.5v5M20.5 9.5v5M6.5 12h11"/></svg>`,
   sessao:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><path d="M12 21s-7-4.6-7-9.7A4.3 4.3 0 0 1 12 8a4.3 4.3 0 0 1 7 3.3C19 16.4 12 21 12 21z"/></svg>`,
   agua:     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><path d="M12 3s6 6.4 6 10.4A6 6 0 0 1 6 13.4C6 9.4 12 3 12 3z"/></svg>`,
+  gota:     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><path d="M12 3.5s5.5 6 5.5 9.7a5.5 5.5 0 0 1-11 0C6.5 9.5 12 3.5 12 3.5z"/></svg>`,
+  capsula:  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><rect x="1.8" y="8.6" width="20.4" height="6.8" rx="3.4" transform="rotate(-45 12 12)"/><path d="M9.6 9.6l4.8 4.8"/></svg>`,
   check:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M4.5 12.5l5 5 10-11"/></svg>`,
   seta:     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M9 5l7 7-7 7"/></svg>`,
   mais:     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" width="17" height="17"><path d="M12 5v14M5 12h14"/></svg>`,
   lapis:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M4 20h4L19.5 8.5a2.1 2.1 0 0 0-3-3L5 17v3z"/></svg>`,
   lixo:     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M4 7h16M9.5 7V5h5v2M6.5 7l1 13h9l1-13"/></svg>`,
 };
+// ══ MEDIDAS ══════════════════════════════════════════════════════
+// Toda opção carrega a própria medida: {valor, unidade}. Assim o app já
+// mostra "150 g" na hora de montar o prato, e ela ajusta no −/+ sem teclado.
+// valor null = "à vontade".
+const med = (valor, unidade) => ({ valor, unidade });
+
+// Passo do −/+ por unidade, pra ajustar sem digitar.
+const PASSO_MEDIDA = { g: 10, ml: 50, un: 1, fatia: 1, 'col sopa': 1, 'col chá': 1, xc: 1, gomos: 1, copo: 1, pote: 1, porção: 1 };
+const passoDe = u => PASSO_MEDIDA[u] || 1;
+
+function medidaTexto(m) {
+  if (!m) return '';
+  if (m.valor == null) return m.unidade || '';
+  const v = Number(m.valor);
+  return `${Number.isInteger(v) ? v : v.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} ${m.unidade}`;
+}
+
+// ── Catálogos do plano da clínica ────────────────────────────────
+// Listas cruas; os ids saem do nome, então continuam estáveis entre versões
+// da dieta (e o histórico antigo segue legível).
+const idDe = nome => 'o-' + nome.toLowerCase()
+  .normalize('NFD').replace(/\p{Diacritic}/gu, '')
+  .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+
+const opcoes = (lista, medidaPadrao) => lista.map(item => {
+  const [nome, medida] = Array.isArray(item) ? item : [item, medidaPadrao];
+  return { id: idDe(nome), nome, medida: medida || medidaPadrao || null };
+});
+
+const CATALOGO = {
+  // Grupo A — à vontade
+  grupoA: ['Abóbora', 'Abobrinha', 'Acelga', 'Agrião', 'Aipo', 'Alcachofra', 'Alface', 'Almeirão',
+    'Aspargo', 'Berinjela', 'Brócolis', 'Caxi', 'Chicória', 'Chuchu', 'Couve', 'Escarola', 'Espinafre',
+    'Folhas da beterraba', 'Guariroba', 'Jiló', 'Maxixe', 'Moranga', 'Nabo', 'Palmito', 'Pepino',
+    'Pimentão', 'Quiabo', 'Rabanete', 'Repolho', 'Rúcula', 'Tomate', 'Tomate-cereja', 'Vagem'],
+
+  // Grupo B — 2 colheres de sopa / 50 g
+  grupoB: ['Batata Astérix', 'Batata baroa', 'Batata-doce', 'Batata inglesa', 'Batata yacon',
+    'Beterraba', 'Cará', 'Cenoura', 'Inhame', 'Mandioca', 'Mandioquinha-salsa', 'Milho-verde'],
+
+  // Proteínas — 150 g (animal: peso cru; vegetal: peso cozido). Ovos têm medida própria.
+  proteinas: ['Alcatra', 'Coxão duro', 'Coxão mole', 'Filé mignon', 'Lagarto', 'Músculo', 'Patinho',
+    'Bisteca suína', 'Filé mignon suíno', 'Lombo suíno',
+    'Coxa de frango', 'Peito de frango', 'Sobrecoxa sem pele',
+    'Atum', 'Badejo', 'Corvina', 'Linguado', 'Merluza', 'Peixe branco', 'Salmão', 'Tilápia',
+    ['Ovo de galinha', med(2, 'un')], ['Ovo de codorna', med(10, 'un')],
+    'Camarão', 'Caranguejo', 'Lagosta', 'Lula', 'Mexilhão', 'Polvo', 'Siri',
+    'Cogumelos', 'Edamame', 'Ervilha', 'Feijão', 'Grão-de-bico', 'Lentilha', 'Soja',
+    'Proteína texturizada de soja'],
+
+  // Frutas — cada uma com a porção da clínica
+  frutas: [
+    ['Abacate', med(2, 'col sopa')], ['Abacaxi', med(1, 'fatia')], ['Acerola', med(10, 'un')],
+    ['Ameixa', med(1, 'un')], ['Amora', med(6, 'un')], ['Atemoia', med(0.5, 'un')],
+    ['Banana', med(1, 'un')], ['Cajá', med(6, 'un')], ['Caqui', med(1, 'un')],
+    ['Carambola', med(1, 'un')], ['Cereja', med(10, 'un')], ['Coco', med(1, 'col sopa')],
+    ['Figo', med(1, 'un')], ['Goiaba', med(1, 'un')], ['Jabuticaba', med(10, 'un')],
+    ['Jaca', med(6, 'gomos')], ['Lichia', med(6, 'un')], ['Maçã', med(1, 'un')],
+    ['Mamão', med(1, 'fatia')], ['Manga', med(0.5, 'un')], ['Mangaba', med(6, 'un')],
+    ['Maracujá', med(0.5, 'un')], ['Melancia', med(1, 'fatia')], ['Melão', med(1, 'fatia')],
+    ['Morango', med(6, 'un')], ['Nectarina', med(1, 'un')], ['Pequi', med(4, 'un')],
+    ['Pera', med(1, 'un')], ['Pêssego', med(1, 'un')], ['Pitanga', med(10, 'un')],
+    ['Pitaya', med(0.5, 'un')], ['Romã', med(1, 'un')], ['Seriguela', med(4, 'un')],
+    ['Tâmara', med(1, 'un')], ['Tangerina', med(1, 'un')], ['Uva', med(10, 'un')],
+    ['Coco seco', med(10, 'un')], ['Cranberry', med(10, 'un')], ['Damasco', med(3, 'un')],
+    ['Gojiberry', med(10, 'un')], ['Uva-passa', med(10, 'un')],
+  ],
+
+  // Oleaginosas — só quando substituir a fruta
+  oleaginosas: [
+    ['Amêndoas', med(5, 'un')], ['Castanha baru', med(4, 'un')], ['Castanha de caju', med(5, 'un')],
+    ['Castanha do pará', med(2, 'un')], ['Nozes', med(3, 'un')],
+  ],
+
+  // Chás — por função
+  chas: ['Canela', 'Chá preto', 'Chá verde', 'Gengibre', 'Hibisco', 'Pimenta',
+    'Anis', 'Cavalinha', 'Chá branco', 'Cravo', 'Dente de leão', 'Limão', 'Mate', 'Salsinha',
+    'Boldo', 'Erva cidreira', 'Hortelã', 'Camomila', 'Erva doce', 'Funcho', 'Melissa', 'Valeriana'],
+
+  folhasSuco: ['Couve', 'Hortelã', 'Pepino', 'Salsinha'],
+  frutasSuco: [
+    ['Maracujá', med(0.5, 'un')], ['Limão', med(1, 'un')], ['Abacaxi', med(1, 'fatia')],
+    ['Melão', med(1, 'fatia')], ['Maçã', med(0.5, 'un')],
+  ],
+};
 
 // ── Semente ──────────────────────────────────────────────────────
-// Dieta de exemplo, coerente com o que a clínica costuma passar.
-// Tudo editável em Ajustes → Plano alimentar; trocar não apaga histórico.
+// Plano real da clínica (Planejamento alimentar avançado #1).
+// Tudo editável em Ajustes → Plano alimentar; trocar cria uma nova versão e
+// nunca apaga a antiga, então o histórico continua fazendo sentido.
 const SEED = {
   perfil: {
     nome: 'Lorena',
     metaAgua: 3000,
+    metaAguaIdeal: 4000,                // a clínica pediu de 3 a 4 L
     pesoInicial: null,
     pesoMeta: null,
     diasExercicio: [1, 2, 3, 4, 5],     // 0 = domingo
@@ -96,64 +185,90 @@ const SEED = {
 
   dietas: [{
     id: 'dieta-1',
-    nome: 'Plano inicial',
+    nome: 'Planejamento avançado #1',
     criadaEm: dataLocal(),
     ativa: true,
-    obs: 'Exemplo — troque pelos alimentos que a nutricionista passou.',
+    obs: 'Plano da clínica. Proteína animal: peso do alimento cru. Proteína vegetal: peso do alimento cozido.',
     refeicoes: [
       { id: 'r-cafe', nome: 'Café da manhã', hora: '07:30', grupos: [
-        { id: 'g1', nome: 'Proteína',    qtd: 1, selecao: 'unica', opcoes: [
-          { id: 'o1', nome: 'Ovo mexido' }, { id: 'o2', nome: 'Queijo branco' }, { id: 'o3', nome: 'Iogurte natural' } ] },
-        { id: 'g2', nome: 'Carboidrato', qtd: 1, selecao: 'unica', opcoes: [
-          { id: 'o4', nome: 'Tapioca' }, { id: 'o5', nome: 'Pão integral' }, { id: 'o6', nome: 'Aveia' } ] },
-        { id: 'g3', nome: 'Fruta',       qtd: 1, selecao: 'unica', opcoes: [
-          { id: 'o7', nome: 'Banana' }, { id: 'o8', nome: 'Mamão' }, { id: 'o9', nome: 'Maçã' } ] },
+        { id: 'g-suco-folha', nome: 'Folha do suco', qtd: 1, selecao: 'unica',
+          obs: 'Bater com 1 fruta, 1 col chá de chia, um pedaço de gengibre e 200 ml de água. Não precisa coar.',
+          opcoes: opcoes(CATALOGO.folhasSuco, med(200, 'ml')) },
+        { id: 'g-suco-fruta', nome: 'Fruta do suco', qtd: 1, selecao: 'unica',
+          opcoes: opcoes(CATALOGO.frutasSuco) },
+        { id: 'g-cafe-bebida', nome: 'Bebida quente', qtd: 1, selecao: 'unica',
+          opcoes: opcoes(['Chá', 'Café'], med(1, 'xc')) },
+        { id: 'g-cafe-prot', nome: 'Proteína', qtd: 1, selecao: 'unica',
+          opcoes: opcoes([['Ovo', med(1, 'un')], ['Queijo minas frescal', med(20, 'g')],
+                          ['Requeijão light', med(1, 'col sopa')]]) },
+        { id: 'g-cafe-carbo', nome: 'Carboidrato ou fruta', qtd: 1, selecao: 'unica',
+          opcoes: opcoes([['Pão de forma 100% integral', med(1, 'fatia')], ['Torrada', med(1, 'un')]])
+                  .concat(opcoes(CATALOGO.frutas)) },
       ]},
+
       { id: 'r-lm', nome: 'Lanche da manhã', hora: '10:00', grupos: [
-        { id: 'g4', nome: 'Fruta ou oleaginosa', qtd: 1, selecao: 'unica', opcoes: [
-          { id: 'o10', nome: 'Maçã' }, { id: 'o11', nome: 'Pera' }, { id: 'o12', nome: 'Castanhas' }, { id: 'o13', nome: 'Iogurte' } ] },
+        { id: 'g-lm-olea', nome: 'Oleaginosas', qtd: 1, selecao: 'unica',
+          opcoes: opcoes(CATALOGO.oleaginosas) },
+        { id: 'g-lm-cha', nome: 'Chá', qtd: 1, selecao: 'unica',
+          opcoes: opcoes(CATALOGO.chas, med(1, 'xc')) },
       ]},
+
       { id: 'r-almoco', nome: 'Almoço', hora: '12:30', grupos: [
-        { id: 'g5', nome: 'Proteína',    qtd: 1, selecao: 'unica', opcoes: [
-          { id: 'o14', nome: 'Frango grelhado' }, { id: 'o15', nome: 'Patinho' }, { id: 'o16', nome: 'Peixe' }, { id: 'o17', nome: 'Ovo' } ] },
-        { id: 'g6', nome: 'Carboidrato', qtd: 1, selecao: 'unica', opcoes: [
-          { id: 'o18', nome: 'Arroz integral' }, { id: 'o19', nome: 'Batata doce' }, { id: 'o20', nome: 'Macarrão integral' } ] },
-        { id: 'g7', nome: 'Legume',      qtd: 1, selecao: 'unica', opcoes: [
-          { id: 'o21', nome: 'Abobrinha' }, { id: 'o22', nome: 'Cenoura' }, { id: 'o23', nome: 'Brócolis' }, { id: 'o24', nome: 'Chuchu' } ] },
-        { id: 'g8', nome: 'Salada',      qtd: 2, selecao: 'multipla', opcoes: [
-          { id: 'o25', nome: 'Alface' }, { id: 'o26', nome: 'Tomate' }, { id: 'o27', nome: 'Pepino' }, { id: 'o28', nome: 'Rúcula' }, { id: 'o29', nome: 'Beterraba' } ] },
+        { id: 'g-al-a', nome: 'Vegetais do Grupo A', qtd: 2, selecao: 'multipla',
+          obs: 'À vontade — marque o que entrou no prato.',
+          opcoes: opcoes(CATALOGO.grupoA, med(null, 'à vontade')) },
+        { id: 'g-al-b', nome: 'Vegetais do Grupo B', qtd: 1, selecao: 'unica',
+          obs: '2 colheres de sopa.',
+          opcoes: opcoes(CATALOGO.grupoB, med(50, 'g')) },
+        { id: 'g-al-prot', nome: 'Proteína', qtd: 1, selecao: 'unica',
+          opcoes: opcoes(CATALOGO.proteinas, med(150, 'g')) },
       ]},
+
       { id: 'r-lt', nome: 'Lanche da tarde', hora: '15:30', grupos: [
-        { id: 'g9', nome: 'Proteína', qtd: 1, selecao: 'unica', opcoes: [
-          { id: 'o30', nome: 'Iogurte natural' }, { id: 'o31', nome: 'Queijo branco' }, { id: 'o32', nome: 'Ovo cozido' } ] },
-        { id: 'g10', nome: 'Fruta',   qtd: 1, selecao: 'unica', opcoes: [
-          { id: 'o33', nome: 'Banana' }, { id: 'o34', nome: 'Morango' }, { id: 'o35', nome: 'Melão' } ] },
+        { id: 'g-lt-fruta', nome: 'Fruta ou oleaginosa', qtd: 1, selecao: 'unica',
+          opcoes: opcoes(CATALOGO.frutas).concat(opcoes(CATALOGO.oleaginosas)) },
+        { id: 'g-lt-cha', nome: 'Chá', qtd: 1, selecao: 'unica',
+          opcoes: opcoes(CATALOGO.chas, med(1, 'xc')) },
       ]},
+
       { id: 'r-jantar', nome: 'Jantar', hora: '19:30', grupos: [
-        { id: 'g11', nome: 'Proteína', qtd: 1, selecao: 'unica', opcoes: [
-          { id: 'o36', nome: 'Frango' }, { id: 'o37', nome: 'Peixe' }, { id: 'o38', nome: 'Omelete' } ] },
-        { id: 'g12', nome: 'Legume',   qtd: 1, selecao: 'unica', opcoes: [
-          { id: 'o39', nome: 'Abobrinha' }, { id: 'o40', nome: 'Berinjela' }, { id: 'o41', nome: 'Couve-flor' } ] },
-        { id: 'g13', nome: 'Salada',   qtd: 2, selecao: 'multipla', opcoes: [
-          { id: 'o42', nome: 'Alface' }, { id: 'o43', nome: 'Tomate' }, { id: 'o44', nome: 'Pepino' }, { id: 'o45', nome: 'Rúcula' } ] },
+        { id: 'g-ja-a', nome: 'Vegetais do Grupo A', qtd: 2, selecao: 'multipla',
+          obs: 'À vontade — marque o que entrou no prato.',
+          opcoes: opcoes(CATALOGO.grupoA, med(null, 'à vontade')) },
+        { id: 'g-ja-prot', nome: 'Proteína', qtd: 1, selecao: 'unica',
+          opcoes: opcoes(CATALOGO.proteinas, med(150, 'g')) },
       ]},
+
       { id: 'r-ceia', nome: 'Ceia', hora: '21:30', grupos: [
-        { id: 'g14', nome: 'Opção leve', qtd: 1, selecao: 'unica', opcoes: [
-          { id: 'o46', nome: 'Chá' }, { id: 'o47', nome: 'Iogurte' }, { id: 'o48', nome: 'Gelatina' } ] },
+        { id: 'g-ceia', nome: 'Opção da ceia', qtd: 1, selecao: 'unica',
+          opcoes: opcoes([['Suco de uva integral', med(150, 'ml')],
+                          ['Gelatina zero açúcar', med(150, 'ml')],
+                          ['Leite desnatado', med(150, 'ml')]]) },
       ]},
     ],
   }],
 
+  // Mounjaro NÃO entra aqui: a aplicação acontece na sessão da clínica e fica
+  // registrada junto com a pesagem, no fluxo da Agenda.
   medicamentos: [
-    { id: 'm1', nome: 'Vitamina D', dose: '1 cápsula', hora: '08:00', frequencia: 'diaria', dias: [], obs: '', ativo: true },
-    { id: 'm2', nome: 'Mounjaro',   dose: 'conforme a clínica', hora: '20:00', frequencia: 'semanal', dias: [0], obs: 'Aplicação semanal', ativo: true },
+    { id: 'm-coentro', nome: 'Tintura de coentro', forma: 'gotas', dose: '20 gotas em 100 ml',
+      hora: '12:00', frequencia: 'diaria', dias: [], obs: 'Antes das principais refeições — tomar antes do almoço.', ativo: true },
+    { id: 'm-multi', nome: 'Multiminerais', forma: 'capsula', dose: '2 cápsulas',
+      hora: '13:30', frequencia: 'diaria', dias: [], obs: 'Depois do almoço.', ativo: true },
+    { id: 'm-berberina', nome: 'Berberina', forma: 'capsula', dose: '2 cápsulas',
+      hora: '19:15', frequencia: 'diaria', dias: [], obs: 'Uma vez ao dia, junto da refeição — antes do jantar.', ativo: true },
+    { id: 'm-sono', nome: 'Shot do sono', forma: 'gotas', dose: '20 gotas em 100 ml',
+      hora: '22:00', frequencia: 'diaria', dias: [], obs: 'Dissolver em água ou chá, antes de dormir.', ativo: true },
   ],
 
-  exercicios: ['Academia', 'Caminhada', 'Dança', 'Pilates', 'Outro'],
+  exercicios: ['Academia', 'Caminhada', 'Dança', 'Pilates', 'Musculação', 'Outro'],
+
+  // O que costuma acontecer num dia de sessão
+  procedimentos: ['Aplicação de Mounjaro', 'Manta térmica', 'Drenagem linfática', 'Avaliação'],
 };
 
 const CHAVES_DADOS = [
-  'perfil', 'dietas', 'medicamentos', 'exercicios',
+  'perfil', 'dietas', 'medicamentos', 'exercicios', 'procedimentos',
   'logRefeicoes', 'logAgua', 'logMedicamentos', 'logExercicios',
   'pesos', 'sessoes', 'scores', 'relatorios', 'conquistas',
 ];
@@ -163,6 +278,7 @@ function iniciarDB() {
   if (!DB.get('dietas'))        DB.set('dietas', SEED.dietas);
   if (!DB.get('medicamentos'))  DB.set('medicamentos', SEED.medicamentos);
   if (!DB.get('exercicios'))    DB.set('exercicios', SEED.exercicios);
+  if (!DB.get('procedimentos')) DB.set('procedimentos', SEED.procedimentos);
   ['logRefeicoes', 'logAgua', 'logMedicamentos', 'logExercicios',
    'pesos', 'sessoes', 'scores', 'relatorios', 'conquistas']
     .forEach(k => { if (!DB.get(k)) DB.set(k, []); });
@@ -298,19 +414,49 @@ function toast(msg) {
 }
 
 // ── Confirmação in-app (nunca confirm() nativo) ──────────────────
+// `duplo: true` exige DOIS toques no botão: o primeiro só arma. Os Ajustes são
+// o coração do app — desconfigurar o plano sem querer estraga o histórico —
+// então lá tudo que apaga ou troca passa por aqui.
 let _confirmaOk = null;
+let _confirmaArmado = false;
+
 function confirmar(titulo, texto, rotuloOk, onOk, opts = {}) {
   _confirmaOk = onOk;
+  _confirmaArmado = !opts.duplo;
   document.getElementById('confirma-titulo').textContent = titulo;
   document.getElementById('confirma-texto').textContent = texto;
+
   const b = document.getElementById('confirma-ok');
   b.textContent = rotuloOk;
-  b.className = 'btn ' + (opts.perigo ? 'btn-cheio' : 'btn-cheio');
+  b.dataset.rotulo = rotuloOk;
+  b.dataset.duplo = opts.duplo ? '1' : '';
+  b.className = 'btn btn-cheio' + (opts.perigo ? ' btn-perigo' : '');
+
+  const aviso = document.getElementById('confirma-aviso');
+  aviso.textContent = opts.duplo ? 'Esta ação mexe no plano — vai pedir confirmação duas vezes.' : '';
+  aviso.style.display = opts.duplo ? 'block' : 'none';
+
   document.getElementById('confirma').classList.add('on');
 }
+
 function fecharConfirma(executar) {
+  const b = document.getElementById('confirma-ok');
+
+  // Primeiro toque num confirme duplo: arma e espera o segundo.
+  if (executar && b.dataset.duplo && !_confirmaArmado) {
+    _confirmaArmado = true;
+    b.textContent = 'Tenho certeza';
+    b.classList.add('armado');
+    document.getElementById('confirma-aviso').textContent = 'Toque de novo para confirmar.';
+    return;
+  }
+
   document.getElementById('confirma').classList.remove('on');
-  const fn = _confirmaOk; _confirmaOk = null;
+  b.classList.remove('armado');
+  b.textContent = b.dataset.rotulo || 'Confirmar';
+  const fn = _confirmaOk;
+  _confirmaOk = null;
+  _confirmaArmado = false;
   if (executar && fn) fn();
 }
 
@@ -363,6 +509,43 @@ function ligarArrastoSheet(sh) {
   sh.addEventListener('touchmove', mover, { passive: true });
   sh.addEventListener('touchend', soltar);
   sh.addEventListener('touchcancel', soltar);
+}
+
+// ── Comemoração ──────────────────────────────────────────────────
+/** Pétalas caindo — só nos momentos que merecem: dia 100%, conquista nova,
+ *  sessão concluída. Puro CSS, some sozinha, respeita reduced-motion. */
+function chuvaDePetalas() {
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const cx = document.createElement('div');
+  cx.className = 'petalas';
+  cx.setAttribute('aria-hidden', 'true');
+  for (let k = 0; k < 14; k++) {
+    const p = document.createElement('i');
+    p.style.left = Math.random() * 100 + '%';
+    p.style.animationDelay = (Math.random() * .5).toFixed(2) + 's';
+    p.style.animationDuration = (2.2 + Math.random() * 1.4).toFixed(2) + 's';
+    p.style.setProperty('--giro', Math.round(Math.random() * 720 - 360) + 'deg');
+    cx.appendChild(p);
+  }
+  document.body.appendChild(cx);
+  setTimeout(() => cx.remove(), 4200);
+}
+
+/** Anima um número de um valor a outro — a nota do dia subindo. */
+function animarNumero(el, de, para, sufixo = '') {
+  if (de === para) return;
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    el.innerHTML = para + sufixo;
+    return;
+  }
+  const t0 = performance.now(), dur = 550;
+  const passo = agora => {
+    const t = Math.min(1, (agora - t0) / dur);
+    const suave = 1 - Math.pow(1 - t, 3);
+    el.innerHTML = Math.round(de + (para - de) * suave) + sufixo;
+    if (t < 1) requestAnimationFrame(passo);
+  };
+  requestAnimationFrame(passo);
 }
 
 // ── Saudação ─────────────────────────────────────────────────────

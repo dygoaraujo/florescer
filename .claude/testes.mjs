@@ -255,5 +255,119 @@ console.log('\n── Medicamentos por frequência ─────────�
   eq('amanhã entra o de outro dia', run(ctx, 'medsDoDia(somaDias(hoje(),1)).map(m => m.id).includes("c")'), true);
 }
 
+console.log('\n── Plano real da clínica ───────────────────');
+{
+  const ctx = novoSandbox();
+  const d = run(ctx, 'dietaAtiva()');
+  eq('6 refeições', d.refeicoes.length, 6);
+  eq('nomes na ordem do dia', d.refeicoes.map(r => r.nome),
+     ['Café da manhã', 'Lanche da manhã', 'Almoço', 'Lanche da tarde', 'Jantar', 'Ceia']);
+  eq('almoço: grupo A, grupo B e proteína',
+     d.refeicoes[2].grupos.map(g => `${g.nome} x${g.qtd}`),
+     ['Vegetais do Grupo A x2', 'Vegetais do Grupo B x1', 'Proteína x1']);
+  eq('jantar não tem grupo B (como no plano)',
+     d.refeicoes[4].grupos.some(g => g.nome.includes('Grupo B')), false);
+  eq('proteína vem com 150 g', run(ctx, `
+    medidaTexto(dietaAtiva().refeicoes[2].grupos[2].opcoes.find(o => o.nome === 'Alcatra').medida);
+  `), '150 g');
+  eq('ovo tem medida própria', run(ctx, `
+    medidaTexto(dietaAtiva().refeicoes[2].grupos[2].opcoes.find(o => o.nome === 'Ovo de galinha').medida);
+  `), '2 un');
+  eq('grupo A é à vontade', run(ctx, `
+    medidaTexto(dietaAtiva().refeicoes[2].grupos[0].opcoes[0].medida);
+  `), 'à vontade');
+  eq('grupo B é 50 g', run(ctx, `
+    medidaTexto(dietaAtiva().refeicoes[2].grupos[1].opcoes[0].medida);
+  `), '50 g');
+  eq('ids únicos dentro de cada grupo', run(ctx, `
+    dietaAtiva().refeicoes.every(r => r.grupos.every(g => new Set(g.opcoes.map(o => o.id)).size === g.opcoes.length));
+  `), true);
+  eq('4 medicamentos, 2 em gotas e 2 em cápsula', run(ctx, `
+    [DB.get('medicamentos').length, DB.get('medicamentos').filter(x => x.forma === 'gotas').length, DB.get('medicamentos').filter(x => x.forma === 'capsula').length];
+  `), [4, 2, 2]);
+  eq('Mounjaro não é medicamento diário', run(ctx, `
+    (DB.get('medicamentos') || []).some(m => /mounjaro/i.test(m.nome));
+  `), false);
+  eq('Mounjaro é procedimento de sessão', run(ctx, `
+    (DB.get('procedimentos') || []).some(p => /mounjaro/i.test(p));
+  `), true);
+}
+
+console.log('\n── Medidas e passo do −/+ ──────────────────');
+{
+  const ctx = novoSandbox();
+  eq('formata inteiro', run(ctx, "medidaTexto(med(150,'g'))"), '150 g');
+  eq('formata fração em pt-BR', run(ctx, "medidaTexto(med(0.5,'un'))"), '0,5 un');
+  eq('à vontade não mostra número', run(ctx, "medidaTexto(med(null,'à vontade'))"), 'à vontade');
+  eq('gramas andam de 10 em 10', run(ctx, "passoDe('g')"), 10);
+  eq('ml andam de 50 em 50', run(ctx, "passoDe('ml')"), 50);
+  eq('unidade anda de 1 em 1', run(ctx, "passoDe('un')"), 1);
+  eq('unidade desconhecida anda de 1', run(ctx, "passoDe('punhado')"), 1);
+}
+
+console.log('\n── Sessão na clínica ───────────────────────');
+{
+  const ctx = novoSandbox();
+  run(ctx, `
+    DB.set('sessoes', [{id:'s1',data:hoje(),hora:'09:00',clinica:'X',pesoEntrada:null,pesoSaida:null,obs:'',procedimentos:[],feita:false}]);
+    var S = () => DB.get('sessoes')[0];
+  `);
+  eq('começa na chegada', run(ctx, 'etapaSessao(S())'), 'chegada');
+  run(ctx, `
+    { const ss = DB.get('sessoes'); ss[0].pesoEntrada = 77.2; DB.set('sessoes', ss); }
+  `);
+  eq('depois de chegar, vai pros procedimentos', run(ctx, 'etapaSessao(S())'), 'durante');
+  run(ctx, `
+    { const ss = DB.get('sessoes'); ss[0].pesoSaida = 76.5; ss[0].feita = true; DB.set('sessoes', ss); }
+    sincronizarPesosDaSessao(S());
+  `);
+  eq('conclui', run(ctx, 'etapaSessao(S())'), 'concluida');
+  eq('as duas pesagens entram no histórico',
+     run(ctx, "DB.get('pesos').map(p => p.origem).sort()"), ['sessao-entrada', 'sessao-saida']);
+
+  // O peso de saída é água perdida na manta: não pode virar "emagreceu".
+  eq('a tendência ignora o peso de saída',
+     run(ctx, "pesosTendencia().map(p => p.peso)"), [77.2]);
+  eq('peso atual = o da chegada', run(ctx, 'pesoAtual()'), 77.2);
+
+  run(ctx, `
+    { const ss = DB.get('sessoes'); ss[0].pesoEntrada = 76.8; DB.set('sessoes', ss); } sincronizarPesosDaSessao(S());
+  `);
+  eq('reeditar a sessão não duplica pesagens', run(ctx, "DB.get('pesos').length"), 2);
+}
+
+console.log('\n── Refeição incompleta ─────────────────────');
+{
+  const ctx = novoSandbox();
+  run(ctx, `
+    var dReal = dietaAtiva();
+    var almoco = dReal.refeicoes[2];
+    // confirmou só a proteína: faltaram os dois grupos de vegetais
+    DB.set('logRefeicoes', [{
+      id:'x', data: somaDias(hoje(),-1), dietaId: dReal.id, refeicaoId: almoco.id, refeicaoNome: almoco.nome,
+      hora:'12:40',
+      escolhas: [{ grupoId: almoco.grupos[2].id, grupoNome:'Proteína',
+        itens: [{ opcaoId: almoco.grupos[2].opcoes[0].id, nome: 'Alcatra', medida: med(120,'g') }] }],
+      completa: false, faltou: ['Vegetais do Grupo A', 'Vegetais do Grupo B'], status: 'feita',
+    }]);
+  `);
+  eq('o texto do histórico traz a medida ajustada',
+     run(ctx, 'escolhasTexto(DB.get("logRefeicoes")[0])'), 'Alcatra 120 g');
+  eq('o relatório conta a incompleta',
+     run(ctx, 'dadosSemana(inicioSemana(somaDias(hoje(),-1))).refeicoesIncompletas'), 1);
+  eq('e diz o que mais faltou', run(ctx, `
+    dadosSemana(inicioSemana(somaDias(hoje(),-1))).faltasComuns.map(f => f.nome + ':' + f.vezes);
+  `), ['Vegetais do Grupo A:1', 'Vegetais do Grupo B:1']);
+
+  // formato antigo (opcaoIds) ainda tem que ser legível
+  run(ctx, `
+    var d2 = dietaAtiva(), a2 = d2.refeicoes[2];
+    DB.set('logRefeicoes', [{ id:'y', data: hoje(), dietaId: d2.id, refeicaoId: a2.id, hora:'12:00',
+      escolhas: [{ grupoId: a2.grupos[2].id, opcaoIds: [a2.grupos[2].opcoes[0].id] }], status:'feita' }]);
+  `);
+  eq('registro em formato antigo continua legível',
+     run(ctx, 'escolhasTexto(DB.get("logRefeicoes")[0])'), 'Alcatra 150 g');
+}
+
 console.log(`\n${falhou ? '✗' : '✓'} ${ok} passaram, ${falhou} falharam\n`);
 process.exit(falhou ? 1 : 0);

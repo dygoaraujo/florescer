@@ -26,8 +26,20 @@ function diasDaSemana(ini) {
 
 /** Peso mais recente até (e incluindo) uma data. */
 function pesoAte(data) {
-  const ps = pesosOrdenados().filter(p => p.data <= data);
+  const ps = pesosTendencia().filter(p => p.data <= data);
   return ps.length ? ps[ps.length - 1].peso : null;
+}
+
+/** Os grupos que mais ficaram de fora das refeições confirmadas na semana. */
+function maisFaltou(logs) {
+  const conta = {};
+  logs.filter(l => l.status === 'feita').forEach(l => {
+    (l.faltou || []).forEach(g => { conta[g] = (conta[g] || 0) + 1; });
+  });
+  return Object.entries(conta)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([nome, vezes]) => ({ nome, vezes }));
 }
 
 function dadosSemana(ini) {
@@ -51,6 +63,8 @@ function dadosSemana(ini) {
     nota: Math.round(dias.reduce((s, d) => s + notaDe(d), 0) / dias.length),
     refeicoesFeitas: logR.filter(l => l.status === 'feita').length,
     refeicoesPuladas: logR.filter(l => l.status === 'pulada').length,
+    refeicoesIncompletas: logR.filter(l => l.status === 'feita' && l.completa === false).length,
+    faltasComuns: maisFaltou(logR),
     refeicoesEsperadas: refsEsperadas,
     vitaminas: logM.length,
     vitaminasEsperadas: medsEsperados,
@@ -203,6 +217,9 @@ function abrirRelatorio(ini) {
       ${linha('Refeições do plano', `${r.refeicoesFeitas}${r.refeicoesEsperadas ? ' de ' + r.refeicoesEsperadas : ''}`,
               r.refeicoesFeitas, ant?.refeicoesFeitas, false)}
       ${r.refeicoesPuladas ? linha('Refeições puladas', String(r.refeicoesPuladas), r.refeicoesPuladas, ant?.refeicoesPuladas, true) : ''}
+      ${r.refeicoesIncompletas ? linha('Refeições incompletas', String(r.refeicoesIncompletas), r.refeicoesIncompletas, ant?.refeicoesIncompletas, true) : ''}
+      ${(r.faltasComuns || []).length ? `<p style="font-size:13px;color:var(--tinta-dim);padding:10px 0 0;line-height:1.6">
+        O que mais faltou no prato: ${esc(fmt.lista(r.faltasComuns.map(f => `${f.nome} (${f.vezes}×)`)))}.</p>` : ''}
       ${linha('Água', fmt.litros(r.aguaTotal), r.aguaTotal / 1000, ant ? ant.aguaTotal / 1000 : null, false)}
       ${linha('Dias que bateu a meta de água', `${r.diasMetaAgua} de ${r.diasNaSemana}`, r.diasMetaAgua, ant?.diasMetaAgua, false)}
       ${linha('Treinos', `${r.treinos}${perfil().metaSemanalExercicio ? ' de ' + perfil().metaSemanalExercicio : ''}`,

@@ -57,8 +57,15 @@ function pesosOrdenados() {
     a.data === b.data ? (a.origem === 'sessao-saida' ? 1 : -1) : a.data.localeCompare(b.data));
 }
 
+/** A linha de evolução ignora o peso de SAÍDA da sessão: logo depois da manta
+ *  térmica a balança cai por água perdida, não por gordura. O peso de chegada,
+ *  medido toda semana nas mesmas condições, é o número honesto. */
+function pesosTendencia() {
+  return pesosOrdenados().filter(p => p.origem !== 'sessao-saida');
+}
+
 function pesoAtual() {
-  const ps = pesosOrdenados();
+  const ps = pesosTendencia();
   return ps.length ? ps[ps.length - 1].peso : (perfil().pesoInicial ?? null);
 }
 
@@ -112,7 +119,7 @@ function calendarioHTML(mes, sessoes) {
     const s = sessoes.find(x => x.data === data);
     const cls = ['cal-d', data === hj ? 'hoje' : '', s ? 'sessao' : '', s && s.feita ? 'feita' : ''].filter(Boolean).join(' ');
     celulas.push(s
-      ? `<button class="${cls}" onclick="editarSessao('${esc(s.id)}')"><span>${d}</span><span class="ponto"></span></button>`
+      ? `<button class="${cls}" onclick="abrirSessao('${esc(s.id)}')"><span>${d}</span><span class="ponto"></span></button>`
       : `<div class="${cls}"><span>${d}</span></div>`);
   }
 
@@ -123,23 +130,188 @@ function calendarioHTML(mes, sessoes) {
     </div>`;
 }
 
-// ── Sessões ──────────────────────────────────────────────────────
+// ══ SESSÕES ════════════════════════════════════════════════════
+// Dia de sessão: ela chega e se pesa, faz os procedimentos (Mounjaro, manta),
+// e se pesa de novo antes de ir embora. São duas pesagens no mesmo dia — por
+// isso o registro é em 3 etapas, cada uma salva na hora. Ela abre o app quando
+// chega, e de novo quando termina.
+
+/** Em que ponto da sessão ela está. */
+function etapaSessao(s) {
+  if (s.pesoEntrada == null) return 'chegada';
+  if (s.pesoSaida == null)   return 'durante';
+  return 'concluida';
+}
+
+function resumoSessao(s) {
+  const etapa = etapaSessao(s);
+  if (etapa === 'chegada')  return [s.hora, s.clinica].filter(Boolean).join(' · ') || 'ainda vai acontecer';
+  if (etapa === 'durante')  return `Chegou com ${fmt.peso(s.pesoEntrada)} — falta o peso de saída`;
+  const dif = s.pesoSaida - s.pesoEntrada;
+  const proc = (s.procedimentos || []).length ? ` · ${(s.procedimentos || []).length} procedimentos` : '';
+  return `${fmt.peso(s.pesoEntrada)} → ${fmt.peso(s.pesoSaida)}${proc}`;
+}
+
 function sessaoItemHTML(s) {
-  const dif = (s.pesoEntrada != null && s.pesoSaida != null) ? s.pesoSaida - s.pesoEntrada : null;
-  const detalhe = s.feita
-    ? (dif != null ? `${fmt.peso(s.pesoEntrada)} → ${fmt.peso(s.pesoSaida)}` : 'concluída')
-    : [s.hora, s.clinica].filter(Boolean).join(' · ');
+  const etapa = etapaSessao(s);
+  const dif = etapa === 'concluida' ? s.pesoSaida - s.pesoEntrada : null;
 
   return `
-    <button class="lista-item" onclick="editarSessao('${esc(s.id)}')">
+    <button class="lista-item" onclick="abrirSessao('${esc(s.id)}')">
       <span class="li-txt">
-        <span class="li-nome">${esc(fmt.longa(s.data))}</span>
-        <span class="li-sub">${esc(detalhe) || '—'}</span>
+        <span class="li-nome">${esc(fmt.maiuscula(fmt.longa(s.data)))}</span>
+        <span class="li-sub">${esc(resumoSessao(s))}</span>
       </span>
       ${dif != null ? `<span class="pill ${dif <= 0 ? 'pill-folha' : 'pill-ambar'}">${dif <= 0 ? '−' : '+'}${fmt.peso(Math.abs(dif))}</span>` : ''}
-      ${s.feita ? '' : '<span class="pill pill-lavanda">marcada</span>'}
+      ${etapa === 'durante' ? '<span class="pill pill-ambar">em andamento</span>' : ''}
+      ${etapa === 'chegada' ? '<span class="pill pill-lavanda">marcada</span>' : ''}
       <span style="color:var(--tinta-fraca)">${IC.seta}</span>
     </button>`;
+}
+
+let sessaoAberta = null;
+
+function abrirSessao(id) {
+  const s = (DB.get('sessoes') || []).find(x => x.id === id);
+  if (!s) return;
+  sessaoAberta = id;
+  abrirSheet('<div class="sheet-alca"></div><div id="ses-corpo"></div>', () => RENDER.agenda());
+  renderSessao();
+}
+
+const sessaoAtual = () => (DB.get('sessoes') || []).find(x => x.id === sessaoAberta);
+
+function salvarSessaoAtual(mudar) {
+  const sessoes = DB.get('sessoes') || [];
+  const i = sessoes.findIndex(x => x.id === sessaoAberta);
+  if (i < 0) return;
+  mudar(sessoes[i]);
+  sessoes[i].feita = etapaSessao(sessoes[i]) === 'concluida';
+  DB.set('sessoes', sessoes);
+  sincronizarPesosDaSessao(sessoes[i]);
+}
+
+/** Sugere o último peso conhecido — ela só ajusta uns décimos. */
+function pesoSugerido() {
+  const p = pesoAtual();
+  return p != null ? p : (perfil().pesoInicial ?? 70);
+}
+
+function renderSessao() {
+  const s = sessaoAtual();
+  const cx = document.getElementById('ses-corpo');
+  if (!s || !cx) return;
+  const etapa = etapaSessao(s);
+  const procs = DB.get('procedimentos') || [];
+  const feitos = s.procedimentos || [];
+
+  const passoPeso = (alvo, valor) => `
+    <div class="peso-campo">
+      <button class="peso-btn" onclick="ajustarPeso('${alvo}',-0.1)" aria-label="Diminuir">−</button>
+      <input id="${alvo}" class="peso-input num" type="number" inputmode="decimal" step="0.1" value="${valor}">
+      <span class="peso-un">kg</span>
+      <button class="peso-btn" onclick="ajustarPeso('${alvo}',0.1)" aria-label="Aumentar">+</button>
+    </div>`;
+
+  cx.innerHTML = `
+    <div class="sheet-cabeca">
+      <div style="flex:1;min-width:0">
+        <h2>Sessão na clínica</h2>
+        <div class="dica">${esc(fmt.maiuscula(fmt.longa(s.data)))}${s.clinica ? ' · ' + esc(s.clinica) : ''}</div>
+      </div>
+      <button class="sheet-x" onclick="fecharSheet()" aria-label="Fechar">✕</button>
+    </div>
+
+    <div class="sheet-corpo">
+      <div class="trilha">
+        ${['Chegada', 'Procedimentos', 'Saída'].map((t, i) => {
+          const passo = etapa === 'chegada' ? 0 : etapa === 'durante' ? 1 : 3;
+          return `<div class="trilha-passo ${i < passo ? 'ok' : ''} ${i === passo ? 'agora' : ''}">
+            <span class="trilha-bola">${i < passo ? '✓' : i + 1}</span><span>${t}</span></div>`;
+        }).join('')}
+      </div>
+
+      ${etapa === 'chegada' ? `
+        <div class="etapa-cx">
+          <div class="rotulo" style="margin-bottom:8px">Peso ao chegar</div>
+          <p class="etapa-dica">Antes de qualquer procedimento — é este peso que conta na sua evolução.</p>
+          ${passoPeso('ses-entrada', pesoSugerido().toFixed(1))}
+          <button class="btn btn-cheio" style="width:100%;margin-top:16px" onclick="registrarChegada()">Cheguei</button>
+        </div>`
+      : `
+        <div class="linha-peso">
+          <span>Chegou às ${esc(s.horaChegada || s.hora || '—')}</span>
+          <strong class="num">${esc(fmt.peso(s.pesoEntrada))}</strong>
+        </div>`}
+
+      ${etapa !== 'chegada' ? `
+        <div class="etapa-cx">
+          <div class="rotulo" style="margin-bottom:9px">O que você fez hoje</div>
+          <div class="chips">
+            ${procs.map(p => `<button class="chip ${feitos.includes(p) ? 'on' : ''}"
+                onclick="alternarProcedimento('${esc(p)}')">${esc(p)}</button>`).join('')}
+          </div>
+        </div>` : ''}
+
+      ${etapa === 'durante' ? `
+        <div class="etapa-cx">
+          <div class="rotulo" style="margin-bottom:8px">Peso ao sair</div>
+          <p class="etapa-dica">Depois da manta. A diferença é principalmente água — o app guarda separado.</p>
+          ${passoPeso('ses-saida', (s.pesoEntrada).toFixed(1))}
+          <button class="btn btn-cheio" style="width:100%;margin-top:16px" onclick="registrarSaida()">Terminei, vou embora</button>
+        </div>` : ''}
+
+      ${etapa === 'concluida' ? `
+        <div class="linha-peso">
+          <span>Saiu às ${esc(s.horaSaida || '—')}</span>
+          <strong class="num">${esc(fmt.peso(s.pesoSaida))}</strong>
+        </div>
+        <div class="sessao-fecho">
+          <div class="num">${s.pesoSaida <= s.pesoEntrada ? '−' : '+'}${esc(fmt.peso(Math.abs(s.pesoSaida - s.pesoEntrada)))}</div>
+          <p>saiu da sessão</p>
+        </div>` : ''}
+
+      <div class="campo" style="margin-top:18px">
+        <label for="ses-obs2">Observações</label>
+        <textarea id="ses-obs2" placeholder="Como você se sentiu, o que a clínica orientou..."
+          onchange="salvarSessaoAtual(x => x.obs = this.value)">${esc(s.obs || '')}</textarea>
+      </div>
+
+      <button class="link-fraco" onclick="editarSessao('${esc(s.id)}')">Editar data, hora e clínica</button>
+    </div>`;
+}
+
+function ajustarPeso(alvo, delta) {
+  const el = document.getElementById(alvo);
+  if (!el) return;
+  el.value = (Math.max(0, (Number(el.value) || 0) + delta)).toFixed(1);
+}
+
+function registrarChegada() {
+  const v = Number(document.getElementById('ses-entrada').value);
+  if (!v) return toast('Informe o peso de chegada');
+  salvarSessaoAtual(s => { s.pesoEntrada = v; s.horaChegada = horaLocal(); });
+  renderSessao();
+  toast('Chegada registrada');
+}
+
+function alternarProcedimento(nome) {
+  salvarSessaoAtual(s => {
+    s.procedimentos = s.procedimentos || [];
+    const i = s.procedimentos.indexOf(nome);
+    if (i >= 0) s.procedimentos.splice(i, 1); else s.procedimentos.push(nome);
+  });
+  renderSessao();
+}
+
+function registrarSaida() {
+  const v = Number(document.getElementById('ses-saida').value);
+  if (!v) return toast('Informe o peso de saída');
+  salvarSessaoAtual(s => { s.pesoSaida = v; s.horaSaida = horaLocal(); });
+  renderSessao();
+  toast('Sessão concluída ✨');
+  chuvaDePetalas();
+  checarConquistas();
 }
 
 let edSessaoId = null;

@@ -11,7 +11,7 @@ RENDER.progresso = function () {
   const dias14 = ultimosDias(14);
   const p = perfil();
 
-  const pesos = pesosOrdenados();
+  const pesos = pesosTendencia();
   const inicial = p.pesoInicial ?? (pesos[0]?.peso ?? null);
   const atual = pesoAtual();
   const perdido = (inicial != null && atual != null) ? inicial - atual : null;
@@ -53,7 +53,7 @@ RENDER.progresso = function () {
     </div>
 
     <div class="sec"><h2>Peso</h2><span class="sub">${pesos.length} pesagens</span></div>
-    <div class="cartao">${graficoPeso(pesos)}</div>
+    <div class="cartao">${graficoPeso(pesos)}${resumoSessoesHTML()}</div>
 
     <div class="sec"><h2>Água</h2><span class="sub">últimos 14 dias</span></div>
     <div class="cartao">${graficoAgua(dias14)}</div>
@@ -152,6 +152,22 @@ function graficoPeso(pesos) {
       <text x="${mX}" y="${GH - 6}" font-size="11" fill="#B9B0C0" ${FONTE_SVG}>${esc(fmt.curta(pesos[0].data))}</text>
       <text x="${GW - mX}" y="${GH - 6}" text-anchor="end" font-size="11" fill="#B9B0C0" ${FONTE_SVG}>${esc(fmt.curta(pesos[pesos.length - 1].data))}</text>
     </svg>`;
+}
+
+/** As sessões da clínica, lidas à parte: o que sai na manta é água, e misturar
+ *  isso na curva de evolução daria uma leitura falsa de emagrecimento. */
+function resumoSessoesHTML() {
+  const feitas = (DB.get('sessoes') || [])
+    .filter(s => s.pesoEntrada != null && s.pesoSaida != null);
+  if (!feitas.length) return '';
+
+  const media = feitas.reduce((s, x) => s + (x.pesoEntrada - x.pesoSaida), 0) / feitas.length;
+  return `
+    <div class="nota-grafico">
+      <span>${feitas.length} ${feitas.length === 1 ? 'sessão' : 'sessões'} na clínica ·
+        média de ${esc(fmt.peso(Math.abs(media)))} ${media >= 0 ? 'a menos' : 'a mais'} na saída</span>
+      <span class="nota-grafico-obs">A curva usa o peso de chegada, medido sempre nas mesmas condições.</span>
+    </div>`;
 }
 
 // ── Gráfico de água ──────────────────────────────────────────────
