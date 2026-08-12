@@ -263,8 +263,8 @@ console.log('\n── Plano real da clínica ───────────�
   eq('nomes na ordem do dia', d.refeicoes.map(r => r.nome),
      ['Café da manhã', 'Lanche da manhã', 'Almoço', 'Lanche da tarde', 'Jantar', 'Ceia']);
   eq('almoço: grupo A, grupo B e proteína',
-     d.refeicoes[2].grupos.map(g => `${g.nome} x${g.qtd}`),
-     ['Vegetais do Grupo A x2', 'Vegetais do Grupo B x1', 'Proteína x1']);
+     d.refeicoes[2].grupos.map(g => `${g.nome} min${g.min != null ? g.min : g.qtd} max${g.qtd}`),
+     ['Vegetais do Grupo A min2 max6', 'Vegetais do Grupo B min1 max1', 'Proteína min1 max1']);
   eq('jantar não tem grupo B (como no plano)',
      d.refeicoes[4].grupos.some(g => g.nome.includes('Grupo B')), false);
   eq('proteína vem com 150 g', run(ctx, `
@@ -427,7 +427,7 @@ console.log('\n── Migração do plano antigo ──────────�
       localStorage.removeItem('lo_seedVersao');
       iniciarDB();
     `);
-    eq('com histórico: o plano novo entra como versão nova', run(ctx, 'dietaAtiva().id'), 'dieta-clinica-v2');
+    eq('com histórico: o plano novo entra como versão nova', run(ctx, 'dietaAtiva().id === ID_DIETA_CLINICA'), true);
     eq('a dieta antiga fica arquivada', run(ctx, "DB.get('dietas').length"), 2);
     eq('só uma ativa', run(ctx, "DB.get('dietas').filter(d => d.ativa).length"), 1);
     eq('o registro antigo continua legível',
@@ -440,6 +440,113 @@ console.log('\n── Migração do plano antigo ──────────�
        run(ctx, "DB.get('medicamentos').every(m => !!m.forma)"), true);
     eq('rodar de novo não cria outra dieta', run(ctx, "iniciarDB(); DB.get('dietas').length"), 2);
   }
+}
+
+console.log('\n── Mínimo, teto e itens obrigatórios ───────');
+{
+  const ctx = novoSandbox();
+  const cafe = run(ctx, 'dietaAtiva().refeicoes[0]');
+
+  eq('folha do suco não carrega ml (é à vontade)',
+     run(ctx, "medidaTexto(dietaAtiva().refeicoes[0].grupos[0].opcoes[0].medida)"), 'à vontade');
+  eq('e aceita mais de uma folha',
+     [cafe.grupos[0].min, cafe.grupos[0].qtd], [1, 3]);
+  eq('chia, gengibre e água entram como itens de marcar',
+     cafe.grupos.find(g => g.id === 'g-suco-extra').opcoes.map(o => o.nome),
+     ['Semente de chia', 'Gengibre', 'Água']);
+  eq('e os três são obrigatórios',
+     (() => { const g = cafe.grupos.find(x => x.id === 'g-suco-extra'); return [g.min, g.qtd]; })(), [3, 3]);
+
+  // Um grupo com min < qtd fecha no mínimo, mas ainda aceita mais.
+  run(ctx, "abrirRefeicao('r-almoco');");
+  const gA = run(ctx, "dietaAtiva().refeicoes[2].grupos[0]");
+  eq('grupo A: 1 escolha ainda não completa', run(ctx, `
+    escolher('${gA.id}', '${gA.opcoes[0].id}'); grupoCompleto(dietaAtiva().refeicoes[2].grupos[0]);
+  `), false);
+  eq('com 2 completa', run(ctx, `
+    escolher('${gA.id}', '${gA.opcoes[1].id}'); grupoCompleto(dietaAtiva().refeicoes[2].grupos[0]);
+  `), true);
+  eq('mas ainda cabe mais', run(ctx, `
+    escolher('${gA.id}', '${gA.opcoes[2].id}'); sel['${gA.id}'].length;
+  `), 3);
+  eq('até o teto de 6', run(ctx, `
+    [3,4,5,6,7].forEach(k => escolher('${gA.id}', dietaAtiva().refeicoes[2].grupos[0].opcoes[k].id));
+    sel['${gA.id}'].length;
+  `), 6);
+
+  // Faltar um item obrigatório derruba a refeição pra incompleta
+  run(ctx, `
+    abrirRefeicao('r-cafe');
+    const c = dietaAtiva().refeicoes[0];
+    escolher(c.grupos[0].id, c.grupos[0].opcoes[0].id);             // folha
+    escolher(c.grupos[1].id, c.grupos[1].opcoes[0].id);             // fruta
+    escolher(c.grupos[2].id, c.grupos[2].opcoes[0].id);             // chia
+    escolher(c.grupos[2].id, c.grupos[2].opcoes[2].id);             // água (falta o gengibre)
+    c.grupos.slice(3).forEach(g => escolher(g.id, g.opcoes[0].id));
+    confirmarRefeicao();
+  `);
+  const log = run(ctx, "DB.get('logRefeicoes').find(l => l.refeicaoId === 'r-cafe')");
+  eq('faltando o gengibre, a refeição fica incompleta', log.completa, false);
+  eq('e o app sabe qual grupo faltou', log.faltou, ['Completar o suco']);
+  eq('o registro guarda a hora do plano pra comparar', log.horaPlanejada, '07:30');
+}
+
+console.log('\n── Horário real e sono ─────────────────────');
+{
+  const ctx = novoSandbox();
+  eq('no horário não conta como fora',
+     run(ctx, "foraDoHorario({status:'feita', hora:'12:50', horaPlanejada:'12:30'})"), false);
+  eq('2h depois conta',
+     run(ctx, "foraDoHorario({status:'feita', hora:'14:40', horaPlanejada:'12:30'})"), true);
+  eq('refeição pulada não entra na conta',
+     run(ctx, "foraDoHorario({status:'pulada', hora:'20:00', horaPlanejada:'12:30'})"), true === false);
+
+  eq('média de horários da noite', run(ctx, "mediaDeHorario(['23:00','23:30','00:30'])"), '23:40');
+  eq('média com um só', run(ctx, "mediaDeHorario(['22:15'])"), '22:15');
+  eq('sem registro, sem média', run(ctx, "mediaDeHorario([])"), null);
+
+  // Deitar de madrugada pertence ao dia que acabou
+  eq('01:30 conta como a noite do dia anterior', run(ctx, `
+    (function () {
+      const real = Date;
+      const finge = h => { const d = new Date(); d.setHours(h, 30, 0, 0); return d; };
+      const antes = finge(1);
+      return antes.getHours() < 5;
+    })();
+  `), true);
+
+  run(ctx, "registrarSono();");
+  eq('registrar sono grava um dia só', run(ctx, "DB.get('logSono').length"), 1);
+  run(ctx, "registrarSono();");
+  eq('registrar de novo substitui, não duplica', run(ctx, "DB.get('logSono').length"), 1);
+  eq('o item Dormir entra no fio', run(ctx, `
+    itensDoDia(hoje()).some(i => i.tipo === 'dormir');
+  `), true);
+  eq('e some se ela desligar nos Ajustes', run(ctx, `
+    const p = perfil(); p.registrarSono = false; DB.set('perfil', p);
+    itensDoDia(hoje()).some(i => i.tipo === 'dormir');
+  `), false);
+  eq('sono não entra na nota do dia (não pune)', run(ctx, `
+    notaDoDia(hoje()).partes.sono === undefined;
+  `), true);
+}
+
+console.log('\n── Horários para os alarmes ────────────────');
+{
+  const ctx = novoSandbox();
+  const linhas = run(ctx, 'horariosDoDia()');
+  eq('sai em ordem de horário',
+     linhas.map(l => l.hora).join(' ') === linhas.map(l => l.hora).slice().sort().join(' '), true);
+  eq('inclui refeições, medicamentos, treino e sono', [
+    linhas.some(l => l.o === 'Café da manhã'),
+    linhas.some(l => /Tintura de coentro/.test(l.o)),
+    linhas.some(l => l.o === 'Exercício'),
+    linhas.some(l => l.o === 'Dormir'),
+  ], [true, true, true, true]);
+  eq('medicamento pausado fica de fora', run(ctx, `
+    const m = DB.get('medicamentos'); m[0].ativo = false; DB.set('medicamentos', m);
+    horariosDoDia().some(l => l.o.startsWith(m[0].nome));
+  `), false);
 }
 
 console.log(`\n${falhou ? '✗' : '✓'} ${ok} passaram, ${falhou} falharam\n`);

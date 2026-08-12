@@ -29,10 +29,16 @@ function itensDoDia(data) {
     tipo: 'sessao', id: s.id, hora: s.hora || '09:00', nome: 'Sessão na clínica', ref: s,
   }));
 
+  // Último item do dia: ela dá o check quando deita, e o app carimba a hora.
+  if (perfil().registrarSono) itens.push({
+    tipo: 'dormir', id: 'dormir', hora: perfil().horaSono || '23:00', nome: 'Dormir',
+  });
+
   // Estado de cada nó
   const logR = (DB.get('logRefeicoes') || []).filter(l => l.data === data);
   const logM = (DB.get('logMedicamentos') || []).filter(l => l.data === data);
   const logE = (DB.get('logExercicios') || []).filter(l => l.data === data);
+  const logS = (DB.get('logSono') || []).filter(l => l.data === data);
 
   itens.forEach(i => {
     if (i.tipo === 'refeicao') {
@@ -44,6 +50,9 @@ function itensDoDia(data) {
       i.estado = i.log ? 'feito' : 'pendente';
     } else if (i.tipo === 'treino') {
       i.log = logE[0] || null;
+      i.estado = i.log ? 'feito' : 'pendente';
+    } else if (i.tipo === 'dormir') {
+      i.log = logS[0] || null;
       i.estado = i.log ? 'feito' : 'pendente';
     } else {
       i.estado = i.ref.feita ? 'feito' : 'pendente';
@@ -113,13 +122,25 @@ function iconeItem(i) {
   if (i.tipo === 'refeicao') return IC.refeicao;
   if (i.tipo === 'treino')   return IC.treino;
   if (i.tipo === 'sessao')   return IC.sessao;
+  if (i.tipo === 'dormir')   return IC.lua;
   return i.ref && i.ref.forma === 'gotas' ? IC.gota : IC.capsula;
+}
+
+/** Cada categoria tem sua cor no fio: bate o olho e já sabe o que é aquilo,
+ *  sem ler. Refeição fica na tinta padrão (é a maioria das linhas). */
+function corDoItem(i) {
+  if (i.tipo === 'remedio') return 'cat-remedio';
+  if (i.tipo === 'treino')  return 'cat-treino';
+  if (i.tipo === 'sessao')  return 'cat-sessao';
+  if (i.tipo === 'dormir')  return 'cat-dormir';
+  return 'cat-refeicao';
 }
 
 function noHTML(i, ativo) {
   if (ativo) return cardAgoraHTML(i);
 
-  const cls = ['no', i.estado === 'feito' ? 'feito' : i.estado === 'pulado' ? 'pulado' : ''].join(' ');
+  const cls = ['no', corDoItem(i),
+    i.estado === 'feito' ? 'feito' : i.estado === 'pulado' ? 'pulado' : ''].join(' ');
   const marca = i.estado === 'feito' ? IC.check
               : i.estado === 'pulado' ? '<span style="font-size:13px">—</span>'
               : '';
@@ -151,6 +172,9 @@ function cardAgoraHTML(i) {
   } else if (i.tipo === 'treino') {
     oque = 'Escolha o que você fez hoje.';
     acoes = `<button class="btn btn-cheio btn-lavanda" onclick="abrirExercicio()">Registrar treino</button>`;
+  } else if (i.tipo === 'dormir') {
+    oque = 'Toque quando estiver deitada — o app guarda a hora que você foi dormir.';
+    acoes = `<button class="btn btn-cheio btn-ceu" onclick="registrarSono()">Fui dormir</button>`;
   } else {
     const etapa = etapaSessao(i.ref);
     oque = etapa === 'chegada'
@@ -161,7 +185,7 @@ function cardAgoraHTML(i) {
   }
 
   return `
-    <div class="no agora">
+    <div class="no agora ${corDoItem(i)}">
       <div class="card-agora ${atrasado ? 'tarde' : ''}">
         <div class="quando">
           <span class="quando-ic">${iconeItem(i)}</span>
@@ -204,7 +228,36 @@ function abrirItem(tipo, id) {
   if (tipo === 'refeicao') return abrirRefeicao(id);
   if (tipo === 'remedio')  return abrirMedicamento(id);
   if (tipo === 'treino')   return abrirExercicio();
+  if (tipo === 'dormir')   return alternarSono();
   return abrirSessao(id);
+}
+
+// ══ SONO ═══════════════════════════════════════════════════════
+// Deitar depois da meia-noite ainda pertence ao dia que acabou — senão a noite
+// de terça apareceria como se fosse a de quarta.
+function diaDoSono() {
+  const agora = new Date();
+  return agora.getHours() < 5 ? somaDias(dataLocal(agora), -1) : dataLocal(agora);
+}
+
+function registrarSono() {
+  const data = diaDoSono();
+  const logs = (DB.get('logSono') || []).filter(l => l.data !== data);
+  const hora = horaLocal();
+  logs.push({ id: uid(), data, hora });
+  DB.set('logSono', logs);
+  toast(`Boa noite 🌙 · deitou às ${hora}`);
+  RENDER.hoje();
+}
+
+function alternarSono() {
+  const data = diaDoSono();
+  const log = (DB.get('logSono') || []).find(l => l.data === data);
+  if (!log) return registrarSono();
+  confirmar('Desmarcar', `Você registrou que deitou às ${log.hora}.`, 'Desmarcar', () => {
+    DB.set('logSono', (DB.get('logSono') || []).filter(l => l.data !== data));
+    RENDER.hoje();
+  });
 }
 
 // ══ ÁGUA — card fixo, nunca abre outra tela ════════════════════
@@ -334,6 +387,7 @@ function abrirRefeicao(refeicaoId) {
   `);
 
   renderGrupos();
+  renderPeRefeicao();
 }
 
 /** Aceita o formato novo (itens) e o antigo (opcaoIds), pro histórico não quebrar. */
@@ -342,17 +396,65 @@ function itensDoLog(escolha) {
   return (escolha.opcaoIds || []).map(id => ({ opcaoId: id, nome: '', medida: null }));
 }
 
-function grupoCompleto(g) { return (sel[g.id] || []).length >= g.qtd; }
+// `min` = quantos ela PRECISA marcar (é o que decide se a refeição ficou
+// completa). `qtd` = o teto de quantos cabem. Quando os dois são iguais, o
+// grupo é exato ("1 de 1"); quando min < qtd, é "à vontade a partir de min".
+const minDoGrupo = g => (g.min != null ? g.min : g.qtd);
+function grupoCompleto(g) { return (sel[g.id] || []).length >= minDoGrupo(g); }
+const grupoCheio  = g => (sel[g.id] || []).length >= g.qtd;
 
 function renderGrupos() {
   const cx = document.getElementById('sheet-grupos');
   if (!cx) return;
-  cx.innerHTML = refAtual.grupos.map(grupoHTML).join('');
+  // O botão de confirmar mora no FIM da rolagem, depois do último grupo: assim
+  // ela passa o olho por tudo antes de salvar, em vez de marcar o primeiro
+  // item e apertar salvar sem ver o resto.
+  cx.innerHTML = refAtual.grupos.map(grupoHTML).join('') + '<div id="fim-grupos"></div>';
+  renderFimGrupos();
+}
+
+function renderFimGrupos() {
+  const cx = document.getElementById('fim-grupos');
+  if (!cx) return;
+
+  const total = Object.values(sel).reduce((s, a) => s + a.length, 0);
+  const faltando = refAtual.grupos.filter(g => !grupoCompleto(g));
+  const jaFeita = (DB.get('logRefeicoes') || [])
+    .some(l => l.data === hoje() && l.refeicaoId === refAtual.id && l.status === 'feita');
+  const anterior = ultimaEscolha(refAtual.id);
+
+  cx.innerHTML = `
+    ${anterior && !total ? `<button class="btn btn-vazio btn-sm" style="width:100%;margin-bottom:10px"
+        onclick="repetirUltima()">↺ Repetir o que comi da última vez</button>` : ''}
+    ${total && faltando.length ? `<div class="aviso-falta">
+        Falta ${esc(fmt.lista(faltando.map(g => g.nome)))}. Pode confirmar assim mesmo —
+        o relatório registra o que ficou de fora.</div>` : ''}
+    <button class="btn btn-cheio" style="width:100%;margin-top:12px" onclick="confirmarRefeicao()"
+      ${total ? '' : 'disabled'}>
+      ${jaFeita ? 'Salvar alteração' : total && faltando.length ? 'Confirmar assim mesmo' : 'Confirmar ' + esc(primeiraPalavra(refAtual.nome))}
+    </button>
+    ${jaFeita
+      ? `<button class="link-fraco" onclick="desmarcarRefeicao()">Desmarcar esta refeição</button>`
+      : `<button class="link-fraco" onclick="pularRefeicao()">Não fiz esta refeição</button>`}
+    <div style="height:6px"></div>`;
+}
+
+/** Rola até o primeiro grupo que ainda falta — é o que a barra de baixo faz
+ *  enquanto a refeição não está completa. */
+function irParaGrupoQueFalta() {
+  const g = refAtual.grupos.find(x => !grupoCompleto(x));
+  const alvo = g && document.getElementById('grupo-' + g.id);
+  const corpo = document.getElementById('sheet-grupos');
+  if (!alvo || !corpo) return;
+  corpo.scrollTo({ top: alvo.offsetTop - 12, behavior: 'smooth' });
 }
 
 function grupoHTML(g, gi) {
   const escolhidos = sel[g.id] || [];
-  const cheio = grupoCompleto(g);
+  const completo = grupoCompleto(g);
+  const cheio = grupoCheio(g);
+  const min = minDoGrupo(g);
+  // Só recolhe quando não cabe mais nada — se ainda dá pra incluir, ela vê.
   const recolhido = cheio && !gruposAbertos.has(g.id);
   const busca = (buscaGrupo[g.id] || '').trim().toLowerCase();
 
@@ -361,10 +463,11 @@ function grupoHTML(g, gi) {
     : g.opcoes;
 
   return `
-    <div class="grupo ${cheio ? 'completo' : ''}">
+    <div class="grupo ${completo ? 'completo' : ''}" id="grupo-${esc(g.id)}">
       <div class="grupo-topo">
         <span class="rotulo">${esc(g.nome)}</span>
-        <span class="grupo-cont num">${escolhidos.length} de ${g.qtd}${cheio ? ' ✓' : ''}</span>
+        <span class="grupo-cont num">${escolhidos.length} de ${min}${completo ? ' ✓' : ''}${
+          !completo && g.qtd > min ? ` · até ${g.qtd}` : ''}</span>
       </div>
       ${g.obs && !recolhido ? `<p class="grupo-obs">${esc(g.obs)}</p>` : ''}
 
@@ -391,18 +494,38 @@ function grupoHTML(g, gi) {
           ${g.opcoes.length > LIMITE_BUSCA ? `
             <input class="busca-grupo" type="search" inputmode="search" placeholder="Buscar em ${g.opcoes.length} opções"
                    value="${esc(buscaGrupo[g.id] || '')}" oninput="filtrarGrupo('${esc(g.id)}', this.value)">` : ''}
-          <div class="chips">
-            ${visiveis.slice(0, busca ? 40 : 400).map(o => {
-              const on = escolhidos.some(it => it.opcaoId === o.id);
-              const travado = !on && cheio;
-              return `<button class="chip ${on ? 'on' : ''} ${travado ? 'travado' : ''}"
-                        onclick="escolher('${esc(g.id)}','${esc(o.id)}')" aria-pressed="${on}">
-                        ${esc(o.nome)}${o.medida && o.medida.valor != null ? `<i class="chip-med">${esc(medidaTexto(o.medida))}</i>` : ''}
-                      </button>`;
-            }).join('')}
-            ${visiveis.length === 0 ? '<span class="sem-achado">Nada com esse nome neste grupo.</span>' : ''}
-          </div>`}
+          ${visiveis.length === 0
+            ? '<span class="sem-achado">Nada com esse nome neste grupo.</span>'
+            : chipsHTML(g, visiveis, escolhidos, cheio)}`}
     </div>`;
+}
+
+/** Chips agrupados pelos subgrupos do papel da clínica (Termogênicos,
+ *  Diuréticos, Bovina, Peixes…). Sem seção, cai numa grade única. */
+function chipsHTML(g, lista, escolhidos, cheio) {
+  const chip = o => {
+    const on = escolhidos.some(it => it.opcaoId === o.id);
+    const travado = !on && cheio;
+    return `<button class="chip ${on ? 'on' : ''} ${travado ? 'travado' : ''}"
+              onclick="escolher('${esc(g.id)}','${esc(o.id)}')" aria-pressed="${on}">
+              ${esc(o.nome)}${o.medida && o.medida.valor != null ? `<i class="chip-med">${esc(medidaTexto(o.medida))}</i>` : ''}
+            </button>`;
+  };
+
+  if (!lista.some(o => o.secao)) return `<div class="chips">${lista.map(chip).join('')}</div>`;
+
+  const secoes = [];
+  lista.forEach(o => {
+    const nome = o.secao || 'Outros';
+    const s = secoes.find(x => x.nome === nome);
+    if (s) s.itens.push(o); else secoes.push({ nome, itens: [o] });
+  });
+
+  return secoes.map(s => `
+    <div class="subgrupo">
+      <div class="subgrupo-tit">${esc(s.nome)}</div>
+      <div class="chips">${s.itens.map(chip).join('')}</div>
+    </div>`).join('');
 }
 
 const semAcento = s => String(s).toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '');
@@ -447,7 +570,7 @@ function escolher(grupoId, opcaoId) {
     return renderPeRefeicao();
   } else if (atual.length < g.qtd) {
     atual.push(novo());
-    if (atual.length >= g.qtd) gruposAbertos.delete(grupoId);
+    if (atual.length >= g.qtd) gruposAbertos.delete(grupoId);   // encheu: recolhe
   } else {
     return;                                   // grupo cheio: ignora o toque
   }
@@ -473,29 +596,25 @@ function mudarMedida(grupoId, i, delta) {
   renderGrupos();
 }
 
+/** Barra fixa embaixo: enquanto falta grupo, ela mostra o progresso e leva ao
+ *  próximo que falta. Quando tudo está completo, vira o botão de confirmar —
+ *  atalho pra quem já terminou, sem tirar de ninguém a passagem pelo conteúdo. */
 function renderPeRefeicao() {
   const pe = document.getElementById('sheet-pe');
   if (!pe) return;
+  renderFimGrupos();
 
-  const total = Object.values(sel).reduce((s, a) => s + a.length, 0);
-  const faltando = refAtual.grupos.filter(g => !grupoCompleto(g));
-  const jaFeita = (DB.get('logRefeicoes') || [])
-    .some(l => l.data === hoje() && l.refeicaoId === refAtual.id && l.status === 'feita');
-  const anterior = ultimaEscolha(refAtual.id);
+  const feitos = refAtual.grupos.filter(grupoCompleto).length;
+  const total = refAtual.grupos.length;
+  const completa = feitos === total;
 
-  pe.innerHTML = `
-    ${anterior && !total ? `<button class="btn btn-vazio btn-sm" style="width:100%;margin-bottom:9px"
-        onclick="repetirUltima()">↺ Repetir o que comi da última vez</button>` : ''}
-    <button class="btn btn-cheio" onclick="confirmarRefeicao()" ${total ? '' : 'disabled style="opacity:.4"'}>
-      ${jaFeita ? 'Salvar alteração' : 'Confirmar ' + esc(primeiraPalavra(refAtual.nome))}
-    </button>
-    ${total && faltando.length ? `<div class="aviso-falta">
-        Falta ${esc(fmt.lista(faltando.map(g => g.nome)))} — pode confirmar assim mesmo,
-        que o relatório registra o que ficou de fora.</div>` : ''}
-    ${jaFeita
-      ? `<button class="link-fraco" onclick="desmarcarRefeicao()">Desmarcar esta refeição</button>`
-      : `<button class="link-fraco" onclick="pularRefeicao()">Não fiz esta refeição</button>`}
-  `;
+  pe.innerHTML = completa
+    ? `<button class="btn btn-cheio" style="width:100%" onclick="confirmarRefeicao()">
+         Confirmar ${esc(primeiraPalavra(refAtual.nome))}</button>`
+    : `<button class="pe-progresso" onclick="irParaGrupoQueFalta()">
+         <span class="pe-barra"><i style="transform:scaleX(${(feitos / total).toFixed(3)})"></i></span>
+         <span class="pe-txt"><strong>${feitos} de ${total}</strong> grupos · toque para ir ao que falta</span>
+       </button>`;
 }
 
 /** Escolhas da última vez que ela fez essa refeição (qualquer dia anterior). */
@@ -540,7 +659,8 @@ function confirmarRefeicao() {
     dietaId: dietaAtiva().id,
     refeicaoId: refAtual.id,
     refeicaoNome: refAtual.nome,
-    hora: horaLocal(),
+    hora: horaLocal(),                 // a hora REAL do registro, não a do plano
+    horaPlanejada: refAtual.hora,
     escolhas,
     completa: faltou.length === 0,
     faltou,
@@ -562,7 +682,8 @@ function pularRefeicao() {
   const reg = {
     id: i >= 0 ? logs[i].id : uid(),
     data: hoje(), dietaId: dietaAtiva().id, refeicaoId: refAtual.id, refeicaoNome: refAtual.nome,
-    hora: horaLocal(), escolhas: [], completa: false, faltou: refAtual.grupos.map(g => g.nome), status: 'pulada',
+    hora: horaLocal(), horaPlanejada: refAtual.hora,
+    escolhas: [], completa: false, faltou: refAtual.grupos.map(g => g.nome), status: 'pulada',
   };
   if (i >= 0) logs[i] = reg; else logs.push(reg);
   DB.set('logRefeicoes', logs);

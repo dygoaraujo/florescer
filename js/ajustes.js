@@ -101,13 +101,37 @@ RENDER.ajustes = function () {
                  onchange="salvarPerfil('metaSemanalExercicio', Number(this.value))">
         </div>
       </div>
-      <div class="campo" style="margin-bottom:0">
+      <div class="campo">
         <label>Tipos de treino</label>
         <div class="chips">
           ${tipos.map(t => `<button class="chip" onclick="removerTipoExercicio('${esc(t)}')">${esc(t)} ✕</button>`).join('')}
           <button class="chip" onclick="novoTipoExercicio()" style="color:var(--tinta-dim)">${IC.mais}</button>
         </div>
       </div>
+      <div class="campo-dupla" style="margin-bottom:0">
+        <div class="campo" style="margin-bottom:0">
+          <label>Registrar o sono</label>
+          <div class="toggles">
+            <button class="toggle ${p.registrarSono ? 'on' : ''}" onclick="salvarPerfil('registrarSono', ${!p.registrarSono})">
+              ${p.registrarSono ? 'Sim' : 'Não'}</button>
+          </div>
+        </div>
+        <div class="campo" style="margin-bottom:0">
+          <label for="aj-sono">Hora de deitar</label>
+          <input id="aj-sono" type="time" value="${esc(p.horaSono || '23:00')}"
+                 onchange="salvarPerfil('horaSono', this.value)">
+        </div>
+      </div>
+    </div>
+
+    <div class="sec"><h2>Lembretes</h2></div>
+    <div class="cartao">
+      <p style="font-size:13px;color:var(--tinta-dim);line-height:1.6;margin-bottom:14px">
+        O iPhone não deixa um app como este tocar alarme na hora marcada. O jeito
+        que funciona de verdade é cadastrar os horários no app <strong style="color:var(--tinta)">Relógio</strong>.
+        O botão abaixo copia a lista pronta.</p>
+      <button class="btn btn-vazio btn-sm" onclick="copiarHorarios()">Copiar horários do dia</button>
+      <div id="lista-horarios"></div>
     </div>
 
     <div class="sec"><h2>Perfil</h2></div>
@@ -557,6 +581,38 @@ function removerMedicamento(id) {
     DB.set('medicamentos', (DB.get('medicamentos') || []).filter(m => m.id !== id));
     fecharSheet();
   }, { duplo: true, perigo: true });
+}
+
+// ══ HORÁRIOS PARA OS ALARMES ═══════════════════════════════════
+// PWA no iPhone não dispara lembrete em horário marcado (precisaria de servidor
+// de push, e nem assim é confiável). Em vez de fingir que dá, o app entrega a
+// lista pronta pra ela cadastrar de uma vez no Relógio.
+function horariosDoDia() {
+  const linhas = [];
+  const dieta = dietaAtiva();
+  if (dieta) dieta.refeicoes.forEach(r => linhas.push({ hora: r.hora, o: r.nome }));
+  (DB.get('medicamentos') || []).filter(m => m.ativo)
+    .forEach(m => linhas.push({ hora: m.hora, o: `${m.nome}${m.dose ? ' — ' + m.dose : ''}` }));
+  const p = perfil();
+  if ((p.diasExercicio || []).length) linhas.push({ hora: p.horaExercicio || '18:00', o: 'Exercício' });
+  if (p.registrarSono) linhas.push({ hora: p.horaSono || '23:00', o: 'Dormir' });
+  return linhas.sort((a, b) => minutosDe(a.hora) - minutosDe(b.hora));
+}
+
+function copiarHorarios() {
+  const texto = horariosDoDia().map(l => `${l.hora}  ${l.o}`).join('\n');
+  const mostrar = () => {
+    document.getElementById('lista-horarios').innerHTML = `
+      <pre class="horarios">${esc(texto)}</pre>`;
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(texto).then(
+      () => { toast('Horários copiados'); mostrar(); },
+      () => { toast('Copie da lista abaixo'); mostrar(); });
+  } else {
+    toast('Copie da lista abaixo');
+    mostrar();
+  }
 }
 
 // ══ BACKUP ═════════════════════════════════════════════════════

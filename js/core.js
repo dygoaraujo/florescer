@@ -74,6 +74,7 @@ const IC = {
   agua:     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><path d="M12 3s6 6.4 6 10.4A6 6 0 0 1 6 13.4C6 9.4 12 3 12 3z"/></svg>`,
   gota:     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><path d="M12 3.5s5.5 6 5.5 9.7a5.5 5.5 0 0 1-11 0C6.5 9.5 12 3.5 12 3.5z"/></svg>`,
   capsula:  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><rect x="1.8" y="8.6" width="20.4" height="6.8" rx="3.4" transform="rotate(-45 12 12)"/><path d="M9.6 9.6l4.8 4.8"/></svg>`,
+  lua:      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><path d="M20 14.5A8.2 8.2 0 0 1 9.5 4 8.5 8.5 0 1 0 20 14.5z"/></svg>`,
   check:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M4.5 12.5l5 5 10-11"/></svg>`,
   seta:     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M9 5l7 7-7 7"/></svg>`,
   mais:     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" width="17" height="17"><path d="M12 5v14M5 12h14"/></svg>`,
@@ -104,10 +105,18 @@ const idDe = nome => 'o-' + nome.toLowerCase()
   .normalize('NFD').replace(/\p{Diacritic}/gu, '')
   .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
-const opcoes = (lista, medidaPadrao) => lista.map(item => {
+const opcoes = (lista, medidaPadrao, secao) => lista.map(item => {
   const [nome, medida] = Array.isArray(item) ? item : [item, medidaPadrao];
-  return { id: idDe(nome), nome, medida: medida || medidaPadrao || null };
+  const o = { id: idDe(nome), nome, medida: medida || medidaPadrao || null };
+  if (secao) o.secao = secao;
+  return o;
 });
+
+/** Listas grandes (chá, proteína, fruta) vêm divididas como no papel da clínica:
+ *  o sheet mostra o subtítulo e só os chips daquele subgrupo embaixo. Sem isso
+ *  viram 40 botões soltos e ela tem que caçar. */
+const opcoesPorSecao = (blocos, medidaPadrao) =>
+  blocos.flatMap(b => opcoes(b.itens, b.medida || medidaPadrao, b.secao));
 
 const CATALOGO = {
   // Grupo A — à vontade
@@ -120,44 +129,53 @@ const CATALOGO = {
   grupoB: ['Batata Astérix', 'Batata baroa', 'Batata-doce', 'Batata inglesa', 'Batata yacon',
     'Beterraba', 'Cará', 'Cenoura', 'Inhame', 'Mandioca', 'Mandioquinha-salsa', 'Milho-verde'],
 
-  // Proteínas — 150 g (animal: peso cru; vegetal: peso cozido). Ovos têm medida própria.
-  proteinas: ['Alcatra', 'Coxão duro', 'Coxão mole', 'Filé mignon', 'Lagarto', 'Músculo', 'Patinho',
-    'Bisteca suína', 'Filé mignon suíno', 'Lombo suíno',
-    'Coxa de frango', 'Peito de frango', 'Sobrecoxa sem pele',
-    'Atum', 'Badejo', 'Corvina', 'Linguado', 'Merluza', 'Peixe branco', 'Salmão', 'Tilápia',
-    ['Ovo de galinha', med(2, 'un')], ['Ovo de codorna', med(10, 'un')],
-    'Camarão', 'Caranguejo', 'Lagosta', 'Lula', 'Mexilhão', 'Polvo', 'Siri',
-    'Cogumelos', 'Edamame', 'Ervilha', 'Feijão', 'Grão-de-bico', 'Lentilha', 'Soja',
-    'Proteína texturizada de soja'],
+  // Proteínas — 150 g (animal: peso cru; vegetal: peso cozido). Ovos têm medida
+  // própria. Divididas como no papel da clínica.
+  proteinas: [
+    { secao: 'Bovina',        itens: ['Alcatra', 'Coxão duro', 'Coxão mole', 'Filé mignon', 'Lagarto', 'Músculo', 'Patinho'] },
+    { secao: 'Frango',        itens: ['Coxa de frango', 'Peito de frango', 'Sobrecoxa sem pele'] },
+    { secao: 'Suína',         itens: ['Bisteca suína', 'Filé mignon suíno', 'Lombo suíno'] },
+    { secao: 'Peixes',        itens: ['Atum', 'Badejo', 'Corvina', 'Linguado', 'Merluza', 'Peixe branco', 'Salmão', 'Tilápia'] },
+    { secao: 'Frutos-do-mar', itens: ['Camarão', 'Caranguejo', 'Lagosta', 'Lula', 'Mexilhão', 'Polvo', 'Siri'] },
+    { secao: 'Ovos',          itens: [['Ovo de galinha', med(2, 'un')], ['Ovo de codorna', med(10, 'un')]] },
+    { secao: 'Vegetal',       itens: ['Cogumelos', 'Edamame', 'Ervilha', 'Feijão', 'Grão-de-bico', 'Lentilha', 'Soja',
+                                      'Proteína texturizada de soja'] },
+  ],
 
   // Frutas — cada uma com a porção da clínica
   frutas: [
-    ['Abacate', med(2, 'col sopa')], ['Abacaxi', med(1, 'fatia')], ['Acerola', med(10, 'un')],
-    ['Ameixa', med(1, 'un')], ['Amora', med(6, 'un')], ['Atemoia', med(0.5, 'un')],
-    ['Banana', med(1, 'un')], ['Cajá', med(6, 'un')], ['Caqui', med(1, 'un')],
-    ['Carambola', med(1, 'un')], ['Cereja', med(10, 'un')], ['Coco', med(1, 'col sopa')],
-    ['Figo', med(1, 'un')], ['Goiaba', med(1, 'un')], ['Jabuticaba', med(10, 'un')],
-    ['Jaca', med(6, 'gomos')], ['Lichia', med(6, 'un')], ['Maçã', med(1, 'un')],
-    ['Mamão', med(1, 'fatia')], ['Manga', med(0.5, 'un')], ['Mangaba', med(6, 'un')],
-    ['Maracujá', med(0.5, 'un')], ['Melancia', med(1, 'fatia')], ['Melão', med(1, 'fatia')],
-    ['Morango', med(6, 'un')], ['Nectarina', med(1, 'un')], ['Pequi', med(4, 'un')],
-    ['Pera', med(1, 'un')], ['Pêssego', med(1, 'un')], ['Pitanga', med(10, 'un')],
-    ['Pitaya', med(0.5, 'un')], ['Romã', med(1, 'un')], ['Seriguela', med(4, 'un')],
-    ['Tâmara', med(1, 'un')], ['Tangerina', med(1, 'un')], ['Uva', med(10, 'un')],
-    ['Coco seco', med(10, 'un')], ['Cranberry', med(10, 'un')], ['Damasco', med(3, 'un')],
-    ['Gojiberry', med(10, 'un')], ['Uva-passa', med(10, 'un')],
+    { secao: 'Frutas', itens: [
+      ['Abacate', med(2, 'col sopa')], ['Abacaxi', med(1, 'fatia')], ['Acerola', med(10, 'un')],
+      ['Ameixa', med(1, 'un')], ['Amora', med(6, 'un')], ['Atemoia', med(0.5, 'un')],
+      ['Banana', med(1, 'un')], ['Cajá', med(6, 'un')], ['Caqui', med(1, 'un')],
+      ['Carambola', med(1, 'un')], ['Cereja', med(10, 'un')], ['Coco', med(1, 'col sopa')],
+      ['Figo', med(1, 'un')], ['Goiaba', med(1, 'un')], ['Jabuticaba', med(10, 'un')],
+      ['Jaca', med(6, 'gomos')], ['Lichia', med(6, 'un')], ['Maçã', med(1, 'un')],
+      ['Mamão', med(1, 'fatia')], ['Manga', med(0.5, 'un')], ['Mangaba', med(6, 'un')],
+      ['Maracujá', med(0.5, 'un')], ['Melancia', med(1, 'fatia')], ['Melão', med(1, 'fatia')],
+      ['Morango', med(6, 'un')], ['Nectarina', med(1, 'un')], ['Pequi', med(4, 'un')],
+      ['Pera', med(1, 'un')], ['Pêssego', med(1, 'un')], ['Pitanga', med(10, 'un')],
+      ['Pitaya', med(0.5, 'un')], ['Romã', med(1, 'un')], ['Seriguela', med(4, 'un')],
+      ['Tâmara', med(1, 'un')], ['Tangerina', med(1, 'un')], ['Uva', med(10, 'un')] ] },
+    { secao: 'Frutas secas', itens: [
+      ['Coco seco', med(10, 'un')], ['Cranberry', med(10, 'un')], ['Damasco', med(3, 'un')],
+      ['Gojiberry', med(10, 'un')], ['Uva-passa', med(10, 'un')] ] },
   ],
 
   // Oleaginosas — só quando substituir a fruta
   oleaginosas: [
-    ['Amêndoas', med(5, 'un')], ['Castanha baru', med(4, 'un')], ['Castanha de caju', med(5, 'un')],
-    ['Castanha do pará', med(2, 'un')], ['Nozes', med(3, 'un')],
+    { secao: 'Oleaginosas', itens: [
+      ['Amêndoas', med(5, 'un')], ['Castanha baru', med(4, 'un')], ['Castanha de caju', med(5, 'un')],
+      ['Castanha do pará', med(2, 'un')], ['Nozes', med(3, 'un')] ] },
   ],
 
-  // Chás — por função
-  chas: ['Canela', 'Chá preto', 'Chá verde', 'Gengibre', 'Hibisco', 'Pimenta',
-    'Anis', 'Cavalinha', 'Chá branco', 'Cravo', 'Dente de leão', 'Limão', 'Mate', 'Salsinha',
-    'Boldo', 'Erva cidreira', 'Hortelã', 'Camomila', 'Erva doce', 'Funcho', 'Melissa', 'Valeriana'],
+  // Chás — por função, como a clínica escreveu
+  chas: [
+    { secao: 'Termogênicos', itens: ['Canela', 'Chá preto', 'Chá verde', 'Gengibre', 'Hibisco', 'Pimenta'] },
+    { secao: 'Diuréticos',   itens: ['Anis', 'Cavalinha', 'Chá branco', 'Cravo', 'Dente de leão', 'Limão', 'Mate', 'Salsinha'] },
+    { secao: 'Digestivos',   itens: ['Boldo', 'Erva cidreira', 'Hortelã'] },
+    { secao: 'Calmantes',    itens: ['Camomila', 'Erva doce', 'Funcho', 'Melissa', 'Valeriana'] },
+  ],
 
   folhasSuco: ['Couve', 'Hortelã', 'Pepino', 'Salsinha'],
   frutasSuco: [
@@ -180,6 +198,8 @@ const SEED = {
     diasExercicio: [1, 2, 3, 4, 5],     // 0 = domingo
     metaSemanalExercicio: 4,
     horaExercicio: '18:00',
+    registrarSono: true,
+    horaSono: '23:00',
     inicioTratamento: dataLocal(),
   },
 
@@ -191,52 +211,59 @@ const SEED = {
     obs: 'Planejamento alimentar avançado #1, da clínica. Proteína animal: peso do alimento cru. Proteína vegetal: peso do alimento cozido.',
     refeicoes: [
       { id: 'r-cafe', nome: 'Café da manhã', hora: '07:30', grupos: [
-        { id: 'g-suco-folha', nome: 'Folha do suco', qtd: 1, selecao: 'unica',
-          obs: 'Bater com 1 fruta, 1 col chá de chia, um pedaço de gengibre e 200 ml de água. Não precisa coar.',
-          opcoes: opcoes(CATALOGO.folhasSuco, med(200, 'ml')) },
+        // A folha não tem quantidade no plano: é à vontade, e pode misturar.
+        { id: 'g-suco-folha', nome: 'Folhas verdes', qtd: 3, min: 1, selecao: 'multipla',
+          obs: 'Pode misturar mais de uma.',
+          opcoes: opcoes(CATALOGO.folhasSuco, med(null, 'à vontade')) },
         { id: 'g-suco-fruta', nome: 'Fruta do suco', qtd: 1, selecao: 'unica',
           opcoes: opcoes(CATALOGO.frutasSuco) },
+        // Itens sem substituto também precisam de check — senão o app não tem
+        // como saber que faltou o gengibre, e a refeição passaria por completa.
+        { id: 'g-suco-extra', nome: 'Completar o suco', qtd: 3, min: 3, selecao: 'multipla',
+          obs: 'Bate tudo junto no liquidificador. Não precisa coar.',
+          opcoes: opcoes([['Semente de chia', med(1, 'col chá')], ['Gengibre', med(1, 'pedaço')],
+                          ['Água', med(200, 'ml')]]) },
         { id: 'g-cafe-bebida', nome: 'Bebida quente', qtd: 1, selecao: 'unica',
           opcoes: opcoes(['Chá', 'Café'], med(1, 'xc')) },
         { id: 'g-cafe-prot', nome: 'Proteína', qtd: 1, selecao: 'unica',
           opcoes: opcoes([['Ovo', med(1, 'un')], ['Queijo minas frescal', med(20, 'g')],
                           ['Requeijão light', med(1, 'col sopa')]]) },
         { id: 'g-cafe-carbo', nome: 'Carboidrato ou fruta', qtd: 1, selecao: 'unica',
-          opcoes: opcoes([['Pão de forma 100% integral', med(1, 'fatia')], ['Torrada', med(1, 'un')]])
-                  .concat(opcoes(CATALOGO.frutas)) },
+          opcoes: opcoes([['Pão de forma 100% integral', med(1, 'fatia')], ['Torrada', med(1, 'un')]], null, 'Pães e torradas')
+                  .concat(opcoesPorSecao(CATALOGO.frutas)) },
       ]},
 
       { id: 'r-lm', nome: 'Lanche da manhã', hora: '10:00', grupos: [
         { id: 'g-lm-olea', nome: 'Oleaginosas', qtd: 1, selecao: 'unica',
-          opcoes: opcoes(CATALOGO.oleaginosas) },
+          opcoes: opcoesPorSecao(CATALOGO.oleaginosas) },
         { id: 'g-lm-cha', nome: 'Chá', qtd: 1, selecao: 'unica',
-          opcoes: opcoes(CATALOGO.chas, med(1, 'xc')) },
+          opcoes: opcoesPorSecao(CATALOGO.chas, med(1, 'xc')) },
       ]},
 
       { id: 'r-almoco', nome: 'Almoço', hora: '12:30', grupos: [
-        { id: 'g-al-a', nome: 'Vegetais do Grupo A', qtd: 2, selecao: 'multipla',
+        { id: 'g-al-a', nome: 'Vegetais do Grupo A', qtd: 6, min: 2, selecao: 'multipla',
           obs: 'À vontade — marque o que entrou no prato.',
           opcoes: opcoes(CATALOGO.grupoA, med(null, 'à vontade')) },
         { id: 'g-al-b', nome: 'Vegetais do Grupo B', qtd: 1, selecao: 'unica',
           obs: '2 colheres de sopa.',
           opcoes: opcoes(CATALOGO.grupoB, med(50, 'g')) },
         { id: 'g-al-prot', nome: 'Proteína', qtd: 1, selecao: 'unica',
-          opcoes: opcoes(CATALOGO.proteinas, med(150, 'g')) },
+          opcoes: opcoesPorSecao(CATALOGO.proteinas, med(150, 'g')) },
       ]},
 
       { id: 'r-lt', nome: 'Lanche da tarde', hora: '15:30', grupos: [
         { id: 'g-lt-fruta', nome: 'Fruta ou oleaginosa', qtd: 1, selecao: 'unica',
-          opcoes: opcoes(CATALOGO.frutas).concat(opcoes(CATALOGO.oleaginosas)) },
+          opcoes: opcoesPorSecao(CATALOGO.frutas).concat(opcoesPorSecao(CATALOGO.oleaginosas)) },
         { id: 'g-lt-cha', nome: 'Chá', qtd: 1, selecao: 'unica',
-          opcoes: opcoes(CATALOGO.chas, med(1, 'xc')) },
+          opcoes: opcoesPorSecao(CATALOGO.chas, med(1, 'xc')) },
       ]},
 
       { id: 'r-jantar', nome: 'Jantar', hora: '19:30', grupos: [
-        { id: 'g-ja-a', nome: 'Vegetais do Grupo A', qtd: 2, selecao: 'multipla',
+        { id: 'g-ja-a', nome: 'Vegetais do Grupo A', qtd: 6, min: 2, selecao: 'multipla',
           obs: 'À vontade — marque o que entrou no prato.',
           opcoes: opcoes(CATALOGO.grupoA, med(null, 'à vontade')) },
         { id: 'g-ja-prot', nome: 'Proteína', qtd: 1, selecao: 'unica',
-          opcoes: opcoes(CATALOGO.proteinas, med(150, 'g')) },
+          opcoes: opcoesPorSecao(CATALOGO.proteinas, med(150, 'g')) },
       ]},
 
       { id: 'r-ceia', nome: 'Ceia', hora: '21:30', grupos: [
@@ -273,13 +300,13 @@ const SEED = {
 // medicamento novo). É o que faz a mudança chegar em quem já abriu o app —
 // sem isso o iniciarDB() só semeia chave que ainda não existe, e o aparelho
 // fica preso no plano antigo pra sempre.
-const SEED_VERSAO = 2;
+const SEED_VERSAO = 4;
 const ID_DIETA_CLINICA = 'dieta-clinica-v' + SEED_VERSAO;
 
 const CHAVES_DADOS = [
   'perfil', 'dietas', 'medicamentos', 'exercicios', 'procedimentos',
   'logRefeicoes', 'logAgua', 'logMedicamentos', 'logExercicios',
-  'pesos', 'sessoes', 'scores', 'relatorios', 'conquistas', 'seedVersao',
+  'pesos', 'sessoes', 'scores', 'relatorios', 'conquistas', 'logSono', 'seedVersao',
 ];
 
 function iniciarDB() {
@@ -289,7 +316,7 @@ function iniciarDB() {
   if (!DB.get('exercicios'))    DB.set('exercicios', SEED.exercicios);
   if (!DB.get('procedimentos')) DB.set('procedimentos', SEED.procedimentos);
   ['logRefeicoes', 'logAgua', 'logMedicamentos', 'logExercicios',
-   'pesos', 'sessoes', 'scores', 'relatorios', 'conquistas']
+   'pesos', 'sessoes', 'scores', 'relatorios', 'conquistas', 'logSono']
     .forEach(k => { if (!DB.get(k)) DB.set(k, []); });
 
   // Completa campos que possam faltar num perfil salvo por versão antiga

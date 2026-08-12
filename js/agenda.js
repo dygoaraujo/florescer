@@ -105,10 +105,12 @@ function mudarMes(delta) {
   RENDER.agenda();
 }
 
+// Grade do mês no padrão brasileiro: domingo a sábado. TODO dia é tocável —
+// tocar num dia vazio já abre o cadastro da sessão com a data preenchida, que
+// é como se procura marcar uma consulta.
 function calendarioHTML(mes, sessoes) {
   const ano = Number(mes.slice(0, 4)), m = Number(mes.slice(5, 7)) - 1;
-  const primeiro = new Date(ano, m, 1);
-  const desloca = (primeiro.getDay() + 6) % 7;         // grade começa na segunda
+  const desloca = new Date(ano, m, 1).getDay();        // 0 = domingo
   const diasNoMes = new Date(ano, m + 1, 0).getDate();
   const hj = hoje();
 
@@ -119,15 +121,18 @@ function calendarioHTML(mes, sessoes) {
     const s = sessoes.find(x => x.data === data);
     const cls = ['cal-d', data === hj ? 'hoje' : '', s ? 'sessao' : '', s && s.feita ? 'feita' : ''].filter(Boolean).join(' ');
     celulas.push(s
-      ? `<button class="${cls}" onclick="abrirSessao('${esc(s.id)}')"><span>${d}</span><span class="ponto"></span></button>`
-      : `<div class="${cls}"><span>${d}</span></div>`);
+      ? `<button class="${cls}" aria-label="Sessão de ${d}"
+           onclick="abrirSessao('${esc(s.id)}')"><span>${d}</span><span class="ponto"></span></button>`
+      : `<button class="${cls}" aria-label="Marcar sessão em ${d}"
+           onclick="editarSessao(null,'${data}')"><span>${d}</span></button>`);
   }
 
   return `
     <div class="cal-grade">
-      ${['S', 'T', 'Q', 'Q', 'S', 'S', 'D'].map(l => `<div class="cal-dow">${l}</div>`).join('')}
+      ${['D', 'S', 'T', 'Q', 'Q', 'S', 'S'].map(l => `<div class="cal-dow">${l}</div>`).join('')}
       ${celulas.join('')}
-    </div>`;
+    </div>
+    <p class="cal-dica">Toque num dia para marcar a sessão.</p>`;
 }
 
 // ══ SESSÕES ════════════════════════════════════════════════════
@@ -316,16 +321,18 @@ function registrarSaida() {
 
 let edSessaoId = null;
 
-function editarSessao(id) {
+function editarSessao(id, dataSugerida) {
   const sessoes = DB.get('sessoes') || [];
   const s = id ? sessoes.find(x => x.id === id) : null;
   edSessaoId = id || null;
+  const data = s ? s.data : (dataSugerida || hoje());
 
   abrirSheet(`
     <div class="sheet-alca"></div>
     <div class="sheet-cabeca">
-      <div><h2>${s ? 'Sessão' : 'Nova sessão'}</h2>
-        <div class="dica">${s ? 'Registre os pesos quando sair da clínica.' : 'Marque a data que a clínica passou.'}</div></div>
+      <div><h2>${s ? 'Sessão' : 'Marcar sessão'}</h2>
+        <div class="dica">${s ? 'Registre os pesos quando sair da clínica.'
+                              : esc(fmt.maiuscula(fmt.longa(data)))}</div></div>
       <button class="sheet-x" onclick="fecharSheet()" aria-label="Fechar">✕</button>
     </div>
     <form id="ses-form">
@@ -333,7 +340,7 @@ function editarSessao(id) {
         <div class="campo-dupla">
           <div class="campo">
             <label for="se-data">Data</label>
-            <input id="se-data" type="date" required value="${esc(s?.data || hoje())}">
+            <input id="se-data" type="date" required value="${esc(data)}">
           </div>
           <div class="campo">
             <label for="se-hora">Hora</label>

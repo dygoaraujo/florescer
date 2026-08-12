@@ -326,11 +326,24 @@ input, select, textarea { font-size: 16px; }   /* < 16px faz o iOS dar zoom no f
   flex-shrink: 0;
   width: 38px;
 }
-.no-cat { flex-shrink: 0; display: flex; color: var(--tinta-fraca); opacity: .8; }
+.no-cat { flex-shrink: 0; display: flex; color: var(--cat, var(--tinta-fraca)); }
 .no-cat svg { width: 16px; height: 16px; }
-.no-nome { font-size: 15px; font-weight: 500; flex: 1; min-width: 0; }
+.no-nome { font-size: 15px; font-weight: 500; flex: 1; min-width: 0; color: var(--cat, var(--tinta)); }
 .no-ic { flex-shrink: 0; color: var(--tinta-fraca); display: flex; }
-.no.feito .no-cat { color: var(--rosa); opacity: 1; }
+
+/* Cor por CATEGORIA no texto e no ícone: bate o olho e já sabe se é comida,
+   remédio, treino ou clínica. As contas do fio continuam contando o ESTADO
+   (feito / agora / pendente) — senão a linha do tempo perde a leitura. */
+.cat-refeicao { --cat: var(--tinta); }
+.cat-remedio  { --cat: var(--rosa-forte); }
+.cat-treino   { --cat: var(--lavanda-forte); }
+.cat-sessao   { --cat: var(--ouro-forte); }
+.cat-dormir   { --cat: var(--ceu-forte); }
+
+.no.feito .no-nome { opacity: .5; }
+.no.feito .no-ic   { color: var(--cat, var(--rosa-forte)); }
+.card-agora .quando,
+.card-agora .quando-ic { color: var(--cat, var(--rosa-forte)); }
 
 .no.feito .no-nome  { color: var(--tinta-dim); }
 .no.feito .no-ic    { color: var(--rosa-forte); }
@@ -619,6 +632,18 @@ input, select, textarea { font-size: 16px; }   /* < 16px faz o iOS dar zoom no f
 .busca-grupo:focus { outline: none; border-color: var(--lavanda-forte); }
 .sem-achado { font-size: 13.5px; color: var(--tinta-fraca); padding: 4px 2px; }
 
+/* Subgrupos: os mesmos do papel da clínica, pra não virar 40 botões soltos */
+.subgrupo + .subgrupo { margin-top: 15px; }
+.subgrupo-tit {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--lavanda-forte);
+  margin-bottom: 8px;
+  padding-left: 2px;
+}
+
 /* O que ela já escolheu, com a quantidade ajustável */
 .escolhido {
   display: flex;
@@ -680,6 +705,33 @@ input, select, textarea { font-size: 16px; }   /* < 16px faz o iOS dar zoom no f
   padding: 6px 2px;
 }
 .trocar:active { color: var(--rosa-forte); }
+
+/* Barra fixa do sheet enquanto a refeição não está completa */
+.pe-progresso {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 2px;
+  text-align: left;
+}
+.pe-barra {
+  display: block;
+  height: 6px;
+  border-radius: 4px;
+  background: var(--bruma);
+  overflow: hidden;
+  position: relative;
+}
+.pe-barra i {
+  position: absolute; inset: 0;
+  transform-origin: left;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--rosa-forte), var(--lavanda-forte));
+  transition: transform .4s cubic-bezier(.2,.8,.3,1);
+}
+.pe-txt { font-size: 12.5px; color: var(--tinta-dim); }
+.pe-txt strong { color: var(--tinta); font-weight: 700; }
 
 .aviso-falta {
   margin-top: 10px;
@@ -765,6 +817,20 @@ input, select, textarea { font-size: 16px; }   /* < 16px faz o iOS dar zoom no f
 .li-nome { font-size: 15px; font-weight: 500; }
 .li-sub { font-size: 12.5px; color: var(--tinta-dim); margin-top: 2px; }
 .li-fim { flex-shrink: 0; font-size: 13px; color: var(--tinta-fraca); font-variant-numeric: tabular-nums; }
+
+.horarios {
+  margin-top: 14px;
+  padding: 14px;
+  border-radius: var(--r-md);
+  background: var(--bruma);
+  font-family: var(--corpo);
+  font-size: 13.5px;
+  line-height: 1.9;
+  font-variant-numeric: tabular-nums;
+  color: var(--tinta-dim);
+  white-space: pre-wrap;
+  user-select: all;
+}
 
 .vazio {
   text-align: center;
@@ -901,6 +967,27 @@ input, select, textarea { font-size: 16px; }   /* < 16px faz o iOS dar zoom no f
 .heat-d.meio { background: var(--lavanda); }
 .heat-d.fora { background: transparent; }
 
+/* Aviso de relatório novo — só aparece até ela abrir */
+.aviso-rel {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  text-align: left;
+  margin-top: 14px;
+  padding: 16px 18px;
+  border-radius: var(--r-lg);
+  background: linear-gradient(150deg, var(--ouro-veu), var(--nuvem) 72%);
+  box-shadow: var(--sombra);
+  animation: sobe .4s cubic-bezier(.2,.8,.3,1);
+}
+.aviso-rel:active { transform: scale(.99); }
+.aviso-rel-ic { font-size: 22px; line-height: 1; flex-shrink: 0; }
+.aviso-rel-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.aviso-rel-txt strong { font-size: 14.5px; font-weight: 700; color: var(--ouro-forte); }
+.aviso-rel-txt span { font-size: 12.5px; color: var(--tinta-dim); }
+.aviso-rel-seta { color: var(--ouro-forte); display: flex; flex-shrink: 0; }
+
 /* Hero do peso — o que ela abre a tela pra ver */
 .peso-hero {
   background: var(--nuvem);
@@ -1009,7 +1096,10 @@ input, select, textarea { font-size: 16px; }   /* < 16px faz o iOS dar zoom no f
   position: relative;
 }
 .cal-d.fora { color: var(--tinta-fraca); opacity: .4; }
+.cal-d { transition: background .15s ease, transform .1s ease; }
+button.cal-d:active { background: var(--bruma); transform: scale(.92); }
 .cal-d.hoje { box-shadow: inset 0 0 0 2px var(--rosa-forte); font-weight: 700; color: var(--rosa-forte); }
+.cal-dica { text-align: center; font-size: 12px; color: var(--tinta-fraca); margin-top: 12px; }
 .cal-d.sessao { background: var(--lavanda-veu); font-weight: 600; color: var(--lavanda-forte); }
 .cal-d.sessao.feita { background: var(--folha-veu); color: #3F7A5E; }
 .cal-d .ponto { width: 4px; height: 4px; border-radius: 50%; background: currentColor; }

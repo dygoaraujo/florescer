@@ -32,7 +32,23 @@ RENDER.progresso = function () {
       </div>
     </header>
 
-    <!-- O peso é o motivo do tratamento: abre a tela. -->
+    <!-- A sequência abre a tela: é o que ela olha todo dia. -->
+    <div class="sequencia">
+      <span class="chama" aria-hidden="true">${seq.atual > 0 ? '🔥' : '🌱'}</span>
+      <div style="flex:1">
+        <div class="v num">${seq.atual} ${seq.atual === 1 ? 'dia' : 'dias'}</div>
+        <div class="k">de sequência · recorde de ${seq.recorde}</div>
+      </div>
+      <div style="text-align:right">
+        <div class="v num" style="font-size:22px">${notaMedia}%</div>
+        <div class="k">média de 14 dias</div>
+      </div>
+    </div>
+
+    <!-- Relatório novo é notícia: sobe pro topo só enquanto ela não abriu. -->
+    <div id="aviso-relatorio"></div>
+
+    <div class="sec"><h2>Peso</h2></div>
     <div class="peso-hero">
       <div class="peso-hero-topo">
         <div>
@@ -55,25 +71,9 @@ RENDER.progresso = function () {
       <button class="btn btn-vazio btn-sm peso-hero-btn" onclick="ir('agenda')">Registrar uma pesagem</button>
     </div>
 
-    <!-- Sequência: o combustível diário. -->
-    <div class="sequencia" style="margin-top:14px">
-      <span class="chama" aria-hidden="true">${seq.atual > 0 ? '🔥' : '🌱'}</span>
-      <div style="flex:1">
-        <div class="v num">${seq.atual} ${seq.atual === 1 ? 'dia' : 'dias'}</div>
-        <div class="k">de sequência · recorde de ${seq.recorde}</div>
-      </div>
-      <div style="text-align:right">
-        <div class="v num" style="font-size:22px">${notaMedia}%</div>
-        <div class="k">média de 14 dias</div>
-      </div>
-    </div>
-
-    <div class="sec"><h2>Como foi sua semana</h2></div>
-    <div id="cartao-relatorio"></div>
-
     <div class="sec"><h2>Detalhes</h2></div>
     <div class="chips" style="margin-bottom:14px">
-      ${[['agua', 'Água'], ['aderencia', 'Aderência'], ['treinos', 'Treinos']].map(([v, l]) =>
+      ${[['agua', 'Água'], ['aderencia', 'Aderência'], ['treinos', 'Treinos'], ['sono', 'Sono']].map(([v, l]) =>
         `<button class="chip ${detalheProgresso === v ? 'on' : ''}" onclick="verDetalhe('${v}')">${l}</button>`).join('')}
     </div>
     <div class="cartao" id="detalhe-cx"></div>
@@ -81,10 +81,14 @@ RENDER.progresso = function () {
     <div class="sec"><h2>Conquistas</h2>
       <span class="sub">${(DB.get('conquistas') || []).length} de ${MEDALHAS.length}</span></div>
     <div class="cartao">${medalhasHTML()}</div>
+
+    <div class="sec"><h2>Como foi sua semana</h2></div>
+    <div id="cartao-relatorio"></div>
   `;
 
   renderDetalhe();
   if (typeof renderCartaoRelatorio === 'function') renderCartaoRelatorio();
+  if (typeof renderAvisoRelatorio === 'function') renderAvisoRelatorio();
 };
 
 function verDetalhe(v) { detalheProgresso = v; RENDER.progresso(); }
@@ -95,7 +99,31 @@ function renderDetalhe() {
   const dias14 = ultimosDias(14);
   cx.innerHTML = detalheProgresso === 'agua'      ? graficoAgua(dias14)
                : detalheProgresso === 'aderencia' ? graficoAderencia(dias14)
+               : detalheProgresso === 'sono'      ? listaSono(dias14)
                :                                    heatmapTreinos();
+}
+
+/** Sono: o que interessa é o horário, não a duração — a clínica pediu
+ *  regularidade, e é isso que a lista mostra. */
+function listaSono(dias) {
+  const logs = DB.get('logSono') || [];
+  const doPeriodo = dias.map(d => ({ data: d, log: logs.find(l => l.data === d) })).filter(x => x.log);
+  if (!doPeriodo.length) {
+    return svgVazio('Toque em "Dormir" no fim do dia e o horário fica registrado aqui.');
+  }
+
+  const media = mediaDeHorario(doPeriodo.map(x => x.log.hora));
+  return `
+    <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:14px">
+      <span class="rotulo">Média</span>
+      <span class="num" style="margin-left:auto;font-family:var(--display);
+        font-variation-settings:'SOFT' 100,'opsz' 48;font-size:23px;font-weight:500;color:var(--ceu-forte)">${esc(media)}</span>
+    </div>
+    ${doPeriodo.slice().reverse().map(x => `
+      <div class="lista-item" style="min-height:44px;padding:9px 0">
+        <span class="li-txt"><span class="li-nome" style="font-size:14px">${esc(fmt.maiuscula(fmt.longa(x.data)))}</span></span>
+        <span class="li-fim" style="font-weight:600;color:var(--ceu-forte)">${esc(x.log.hora)}</span>
+      </div>`).join('')}`;
 }
 
 // ── Utilidades ───────────────────────────────────────────────────

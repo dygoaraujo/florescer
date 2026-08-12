@@ -30,6 +30,26 @@ function pesoAte(data) {
   return ps.length ? ps[ps.length - 1].peso : null;
 }
 
+// O registro guarda a hora REAL e a hora do plano. Mais de 1h30 de diferença
+// deixou de ser "quase na hora" — é o espaçamento entre refeições saindo do lugar.
+const TOLERANCIA_HORARIO = 90;
+
+function foraDoHorario(l) {
+  if (l.status !== 'feita' || !l.horaPlanejada) return false;
+  return Math.abs(minutosDe(l.hora) - minutosDe(l.horaPlanejada)) > TOLERANCIA_HORARIO;
+}
+
+/** Média de horários noturnos (23:40 e 00:20 dão 00:00, não meio-dia). */
+function mediaDeHorario(horas) {
+  if (!horas.length) return null;
+  const mins = horas.map(h => {
+    const m = minutosDe(h);
+    return m < 12 * 60 ? m + 24 * 60 : m;      // madrugada conta como "depois"
+  });
+  const media = Math.round(mins.reduce((s, m) => s + m, 0) / mins.length) % (24 * 60);
+  return `${String(Math.floor(media / 60)).padStart(2, '0')}:${String(media % 60).padStart(2, '0')}`;
+}
+
 /** Os grupos que mais ficaram de fora das refeições confirmadas na semana. */
 function maisFaltou(logs) {
   const conta = {};
@@ -64,7 +84,9 @@ function dadosSemana(ini) {
     refeicoesFeitas: logR.filter(l => l.status === 'feita').length,
     refeicoesPuladas: logR.filter(l => l.status === 'pulada').length,
     refeicoesIncompletas: logR.filter(l => l.status === 'feita' && l.completa === false).length,
+    refeicoesForaDoHorario: logR.filter(foraDoHorario).length,
     faltasComuns: maisFaltou(logR),
+    horaSonoMedia: mediaDeHorario((DB.get('logSono') || []).filter(l => dias.includes(l.data)).map(l => l.hora)),
     refeicoesEsperadas: refsEsperadas,
     vitaminas: logM.length,
     vitaminasEsperadas: medsEsperados,
@@ -170,8 +192,41 @@ function previaSemana(d) {
     </div>`).join('');
 }
 
+/** O relatório mora no fim da tela, mas quando sai um novo ele é notícia:
+ *  vira um aviso no topo até ela abrir. Depois some e não incomoda mais. */
+function renderAvisoRelatorio() {
+  const cx = document.getElementById('aviso-relatorio');
+  if (!cx) return;
+  cx.innerHTML = '';
+
+  const novo = (DB.get('relatorios') || [])
+    .filter(r => !r.lido)
+    .sort((a, b) => b.ini.localeCompare(a.ini))[0];
+  if (!novo) return;
+
+  cx.innerHTML = `
+    <button class="aviso-rel" onclick="abrirRelatorio('${esc(novo.ini)}')">
+      <span class="aviso-rel-ic" aria-hidden="true">✨</span>
+      <span class="aviso-rel-txt">
+        <strong>Seu resumo da semana está pronto</strong>
+        <span>${esc(fmt.curta(novo.ini))} a ${esc(fmt.curta(novo.fim))} · nota ${novo.nota}%</span>
+      </span>
+      <span class="aviso-rel-seta">${IC.seta}</span>
+    </button>`;
+}
+
+function marcarRelatorioLido(ini) {
+  const rels = DB.get('relatorios') || [];
+  const r = rels.find(x => x.ini === ini);
+  if (!r || r.lido) return;
+  r.lido = true;
+  DB.set('relatorios', rels);
+}
+
 // ── Relatório completo ───────────────────────────────────────────
 function abrirRelatorio(ini) {
+  marcarRelatorioLido(ini);
+  if (typeof renderAvisoRelatorio === 'function') renderAvisoRelatorio();
   const rels = DB.get('relatorios') || [];
   const r = rels.find(x => x.ini === ini) || dadosSemana(ini);
   const ant = rels.find(x => x.ini === somaDias(ini, -7)) || null;
@@ -218,6 +273,9 @@ function abrirRelatorio(ini) {
               r.refeicoesFeitas, ant?.refeicoesFeitas, false)}
       ${r.refeicoesPuladas ? linha('Refeições puladas', String(r.refeicoesPuladas), r.refeicoesPuladas, ant?.refeicoesPuladas, true) : ''}
       ${r.refeicoesIncompletas ? linha('Refeições incompletas', String(r.refeicoesIncompletas), r.refeicoesIncompletas, ant?.refeicoesIncompletas, true) : ''}
+      ${r.refeicoesForaDoHorario ? linha('Fora do horário', `${r.refeicoesForaDoHorario} refeições`,
+              r.refeicoesForaDoHorario, ant?.refeicoesForaDoHorario, true) : ''}
+      ${r.horaSonoMedia ? linha('Foi dormir, em média', r.horaSonoMedia, null, null, false) : ''}
       ${(r.faltasComuns || []).length ? `<p style="font-size:13px;color:var(--tinta-dim);padding:10px 0 0;line-height:1.6">
         O que mais faltou no prato: ${esc(fmt.lista(r.faltasComuns.map(f => `${f.nome} (${f.vezes}×)`)))}.</p>` : ''}
       ${linha('Água', fmt.litros(r.aguaTotal), r.aguaTotal / 1000, ant ? ant.aguaTotal / 1000 : null, false)}
