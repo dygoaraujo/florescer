@@ -45,6 +45,8 @@ const fmt = {
     if (!s) return '—';
     return deData(s).toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
   },
+  // Só a primeira letra — `text-transform: capitalize` estragaria o "de" do meio.
+  maiuscula(s) { return s ? s[0].toUpperCase() + s.slice(1) : s; },
   litros(ml) {
     if (ml == null) return '—';
     return (ml / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' L';

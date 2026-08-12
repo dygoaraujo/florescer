@@ -795,7 +795,6 @@ input, select, textarea { font-size: 16px; }   /* < 16px faz o iOS dar zoom no f
   font-family: var(--display);
   font-variation-settings: 'SOFT' 100, 'WONK' 1, 'opsz' 30;
   font-weight: 500; font-size: 17px;
-  text-transform: capitalize;
 }
 .cal-nav {
   width: 40px; height: 40px;

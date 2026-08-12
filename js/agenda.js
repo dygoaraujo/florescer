@@ -88,8 +88,8 @@ function pesoResumoHTML() {
 
 // ── Calendário ───────────────────────────────────────────────────
 function nomeMes(m) {
-  return new Date(Number(m.slice(0, 4)), Number(m.slice(5, 7)) - 1, 1)
-    .toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+  const d = new Date(Number(m.slice(0, 4)), Number(m.slice(5, 7)) - 1, 1);
+  return `${fmt.maiuscula(d.toLocaleDateString('pt-BR', { month: 'long' }))} de ${d.getFullYear()}`;
 }
 
 function mudarMes(delta) {

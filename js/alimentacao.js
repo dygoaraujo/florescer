@@ -98,7 +98,7 @@ function comidaHistoricoHTML() {
     return `
       <div class="cartao" style="padding:16px 18px">
         <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:10px">
-          <span style="font-weight:600;font-size:14.5px;text-transform:capitalize">${esc(fmt.longa(d))}</span>
+          <span style="font-weight:600;font-size:14.5px">${esc(fmt.maiuscula(fmt.longa(d)))}</span>
           <span class="li-fim" style="margin-left:auto">${feitas.length}${totalRefs ? '/' + totalRefs : ''} · ${notaDe(d)}%</span>
         </div>
         ${doDia.sort((a, b) => a.hora.localeCompare(b.hora)).map(l => `
