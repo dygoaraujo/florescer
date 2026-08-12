@@ -12,7 +12,7 @@ RENDER.alimentacao = function () {
     <header class="cabeca">
       <div class="cabeca-txt">
         <h1>Alimentação</h1>
-        <div class="data">${esc(dieta ? dieta.nome.toLowerCase() : 'sem plano cadastrado')}</div>
+        <div class="data">${esc(dieta ? dieta.nome : 'sem plano cadastrado')}</div>
       </div>
     </header>
 

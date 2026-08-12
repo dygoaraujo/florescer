@@ -369,5 +369,78 @@ console.log('\n── Refeição incompleta ────────────
      run(ctx, 'escolhasTexto(DB.get("logRefeicoes")[0])'), 'Alcatra 150 g');
 }
 
+console.log('\n── Migração do plano antigo ────────────────');
+{
+  // Reproduz o aparelho do Rodrigo: já tinha aberto a v1, então as chaves
+  // existem e o iniciarDB() sozinho NUNCA traria o plano novo.
+  const DIETA_VELHA = {
+    id: 'dieta-1', nome: 'Plano inicial', criadaEm: '2026-08-01', ativa: true, obs: 'Exemplo',
+    refeicoes: [{ id: 'r-cafe', nome: 'Café da manhã', hora: '07:30', grupos: [
+      { id: 'g1', nome: 'Proteína', qtd: 1, selecao: 'unica',
+        opcoes: [{ id: 'o1', nome: 'Ovo mexido' }, { id: 'o2', nome: 'Queijo branco' }] }] }],
+  };
+  const MEDS_VELHOS = [
+    { id: 'm1', nome: 'Vitamina D', dose: '1 cápsula', hora: '08:00', frequencia: 'diaria', dias: [], obs: '', ativo: true },
+    { id: 'm2', nome: 'Mounjaro', dose: '', hora: '20:00', frequencia: 'semanal', dias: [0], obs: '', ativo: true },
+  ];
+
+  // (a) aparelho sem histórico — o plano de exemplo pode ser trocado direto
+  {
+    const ctx = novoSandbox();
+    run(ctx, `
+      DB.set('dietas', ${JSON.stringify([DIETA_VELHA])});
+      DB.set('medicamentos', ${JSON.stringify(MEDS_VELHOS)});
+      DB.set('logRefeicoes', []);
+      localStorage.removeItem('lo_seedVersao');
+      iniciarDB();
+    `);
+    eq('sem histórico: o plano real entra no lugar', run(ctx, 'dietaAtiva().nome'), 'Dieta 1');
+    eq('e traz as 6 refeições', run(ctx, 'dietaAtiva().refeicoes.length'), 6);
+    eq('com as opções e medidas certas', run(ctx, `
+      medidaTexto(dietaAtiva().refeicoes[2].grupos[2].opcoes.find(o => o.nome === 'Alcatra').medida);
+    `), '150 g');
+    eq('não fica plano velho pendurado', run(ctx, "DB.get('dietas').length"), 1);
+    eq('os 4 manipulados aparecem', run(ctx, "DB.get('medicamentos').map(m => m.nome).sort()"),
+       ['Berberina', 'Multiminerais', 'Shot do sono', 'Tintura de coentro']);
+    eq('Mounjaro sai dos medicamentos diários',
+       run(ctx, "DB.get('medicamentos').some(m => /mounjaro/i.test(m.nome))"), false);
+    eq('e vira procedimento da clínica',
+       run(ctx, "DB.get('procedimentos').some(p => /mounjaro/i.test(p))"), true);
+    eq('aparecem no fio do dia', run(ctx, `
+      itensDoDia(hoje()).filter(i => i.tipo === 'remedio').map(i => i.hora + ' ' + i.nome);
+    `), ['12:00 Tintura de coentro', '13:30 Multiminerais', '19:15 Berberina', '22:00 Shot do sono']);
+    eq('rodar de novo não duplica nada', run(ctx, `
+      iniciarDB(); iniciarDB();
+      [DB.get('dietas').length, DB.get('medicamentos').length];
+    `), [1, 4]);
+  }
+
+  // (b) aparelho COM histórico — o passado não pode mudar
+  {
+    const ctx = novoSandbox();
+    run(ctx, `
+      DB.set('dietas', ${JSON.stringify([DIETA_VELHA])});
+      DB.set('medicamentos', ${JSON.stringify(MEDS_VELHOS)});
+      DB.set('logRefeicoes', [{ id:'v', data: somaDias(hoje(),-2), dietaId: 'dieta-1',
+        refeicaoId: 'r-cafe', hora: '07:30',
+        escolhas: [{ grupoId: 'g1', opcaoIds: ['o1'] }], status: 'feita' }]);
+      localStorage.removeItem('lo_seedVersao');
+      iniciarDB();
+    `);
+    eq('com histórico: o plano novo entra como versão nova', run(ctx, 'dietaAtiva().id'), 'dieta-clinica-v2');
+    eq('a dieta antiga fica arquivada', run(ctx, "DB.get('dietas').length"), 2);
+    eq('só uma ativa', run(ctx, "DB.get('dietas').filter(d => d.ativa).length"), 1);
+    eq('o registro antigo continua legível',
+       run(ctx, "escolhasTexto(DB.get('logRefeicoes')[0])"), 'Ovo mexido');
+    eq('o medicamento dela não é apagado',
+       run(ctx, "DB.get('medicamentos').some(m => m.nome === 'Vitamina D')"), true);
+    eq('mas o Mounjaro sai mesmo assim',
+       run(ctx, "DB.get('medicamentos').some(m => /mounjaro/i.test(m.nome))"), false);
+    eq('medicamento antigo ganha o campo forma',
+       run(ctx, "DB.get('medicamentos').every(m => !!m.forma)"), true);
+    eq('rodar de novo não cria outra dieta', run(ctx, "iniciarDB(); DB.get('dietas').length"), 2);
+  }
+}
+
 console.log(`\n${falhou ? '✗' : '✓'} ${ok} passaram, ${falhou} falharam\n`);
 process.exit(falhou ? 1 : 0);

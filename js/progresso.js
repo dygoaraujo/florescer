@@ -6,6 +6,10 @@
 // Um dia entra na sequência quando a nota fecha em 70% ou mais.
 const NOTA_SEQUENCIA = 70;
 
+// Qual gráfico de detalhe está aberto. Os três não cabem juntos numa tela de
+// celular sem virar parede de scroll — e a tela precisa abrir no que interessa.
+let detalheProgresso = 'agua';   // agua | aderencia | treinos
+
 RENDER.progresso = function () {
   const seq = sequencia();
   const dias14 = ultimosDias(14);
@@ -15,8 +19,8 @@ RENDER.progresso = function () {
   const inicial = p.pesoInicial ?? (pesos[0]?.peso ?? null);
   const atual = pesoAtual();
   const perdido = (inicial != null && atual != null) ? inicial - atual : null;
+  const falta = (p.pesoMeta != null && atual != null) ? atual - p.pesoMeta : null;
 
-  const treinos = DB.get('logExercicios') || [];
   const notaMedia = dias14.length
     ? Math.round(dias14.reduce((s, d) => s + notaDe(d), 0) / dias14.length) : 0;
 
@@ -28,7 +32,31 @@ RENDER.progresso = function () {
       </div>
     </header>
 
-    <div class="sequencia">
+    <!-- O peso é o motivo do tratamento: abre a tela. -->
+    <div class="peso-hero">
+      <div class="peso-hero-topo">
+        <div>
+          <div class="rotulo">Peso agora</div>
+          <div class="peso-hero-v num">${esc(fmt.peso(atual))}</div>
+        </div>
+        ${perdido != null ? `
+          <div class="peso-hero-dif ${perdido > 0 ? 'bom' : ''}">
+            <div class="num">${perdido > 0 ? '−' : perdido < 0 ? '+' : ''}${esc(fmt.peso(Math.abs(perdido)))}</div>
+            <div class="k">${perdido >= 0 ? 'desde o início' : 'acima do início'}</div>
+          </div>` : ''}
+      </div>
+      ${falta != null && falta > 0
+        ? `<div class="peso-hero-meta">Faltam <strong>${esc(fmt.peso(falta))}</strong> para os ${esc(fmt.peso(p.pesoMeta))} que você quer.</div>`
+        : falta != null
+          ? `<div class="peso-hero-meta ouro">Você chegou na meta de ${esc(fmt.peso(p.pesoMeta))} ✨</div>`
+          : `<div class="peso-hero-meta">Informe o peso desejado em Ajustes para acompanhar o quanto falta.</div>`}
+      ${graficoPeso(pesos)}
+      ${resumoSessoesHTML()}
+      <button class="btn btn-vazio btn-sm peso-hero-btn" onclick="ir('agenda')">Registrar uma pesagem</button>
+    </div>
+
+    <!-- Sequência: o combustível diário. -->
+    <div class="sequencia" style="margin-top:14px">
       <span class="chama" aria-hidden="true">${seq.atual > 0 ? '🔥' : '🌱'}</span>
       <div style="flex:1">
         <div class="v num">${seq.atual} ${seq.atual === 1 ? 'dia' : 'dias'}</div>
@@ -40,39 +68,35 @@ RENDER.progresso = function () {
       </div>
     </div>
 
-    <div class="kpis" style="margin-top:14px">
-      <div class="kpi">
-        <div class="v num" style="color:${perdido != null && perdido > 0 ? 'var(--folha)' : 'inherit'}">
-          ${perdido == null ? '—' : (perdido > 0 ? '−' : '') + fmt.peso(Math.abs(perdido))}</div>
-        <div class="k">${perdido != null && perdido < 0 ? 'ganho desde o início' : 'perdido desde o início'}</div>
-      </div>
-      <div class="kpi">
-        <div class="v num">${treinos.length}</div>
-        <div class="k">treinos registrados</div>
-      </div>
-    </div>
-
-    <div class="sec"><h2>Peso</h2><span class="sub">${pesos.length} pesagens</span></div>
-    <div class="cartao">${graficoPeso(pesos)}${resumoSessoesHTML()}</div>
-
-    <div class="sec"><h2>Água</h2><span class="sub">últimos 14 dias</span></div>
-    <div class="cartao">${graficoAgua(dias14)}</div>
-
-    <div class="sec"><h2>Aderência</h2><span class="sub">nota de cada dia</span></div>
-    <div class="cartao">${graficoAderencia(dias14)}</div>
-
-    <div class="sec"><h2>Treinos</h2><span class="sub">últimas 12 semanas</span></div>
-    <div class="cartao">${heatmapTreinos()}</div>
-
-    <div class="sec"><h2>Conquistas</h2></div>
-    <div class="cartao">${medalhasHTML()}</div>
-
-    <div class="sec"><h2>Relatório da semana</h2></div>
+    <div class="sec"><h2>Como foi sua semana</h2></div>
     <div id="cartao-relatorio"></div>
+
+    <div class="sec"><h2>Detalhes</h2></div>
+    <div class="chips" style="margin-bottom:14px">
+      ${[['agua', 'Água'], ['aderencia', 'Aderência'], ['treinos', 'Treinos']].map(([v, l]) =>
+        `<button class="chip ${detalheProgresso === v ? 'on' : ''}" onclick="verDetalhe('${v}')">${l}</button>`).join('')}
+    </div>
+    <div class="cartao" id="detalhe-cx"></div>
+
+    <div class="sec"><h2>Conquistas</h2>
+      <span class="sub">${(DB.get('conquistas') || []).length} de ${MEDALHAS.length}</span></div>
+    <div class="cartao">${medalhasHTML()}</div>
   `;
 
+  renderDetalhe();
   if (typeof renderCartaoRelatorio === 'function') renderCartaoRelatorio();
 };
+
+function verDetalhe(v) { detalheProgresso = v; RENDER.progresso(); }
+
+function renderDetalhe() {
+  const cx = document.getElementById('detalhe-cx');
+  if (!cx) return;
+  const dias14 = ultimosDias(14);
+  cx.innerHTML = detalheProgresso === 'agua'      ? graficoAgua(dias14)
+               : detalheProgresso === 'aderencia' ? graficoAderencia(dias14)
+               :                                    heatmapTreinos();
+}
 
 // ── Utilidades ───────────────────────────────────────────────────
 function ultimosDias(n) {

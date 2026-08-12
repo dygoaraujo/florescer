@@ -35,6 +35,7 @@ RENDER.ajustes = function () {
       <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
         <button class="btn btn-vazio btn-sm" onclick="novaRefeicao()">${IC.mais} Refeição</button>
         <button class="btn btn-vazio btn-sm" onclick="novaVersaoDieta()">Nova versão do plano</button>
+        <button class="btn btn-vazio btn-sm" onclick="recarregarPlanoDaClinica()">Recarregar plano da clínica</button>
       </div>
     </div>
     ${arquivadas.length ? `
@@ -397,6 +398,22 @@ function novaVersaoDieta() {
       dietas.push(nova);
       DB.set('dietas', dietas);
       toast('Nova versão criada');
+      RENDER.ajustes();
+    }, { duplo: true });
+}
+
+/** Volta ao plano original da clínica como uma versão nova. Serve pra desfazer
+ *  uma edição que deu errado sem perder nada do que já foi registrado. */
+function recarregarPlanoDaClinica() {
+  confirmar('Recarregar plano da clínica',
+    'Entra uma cópia limpa do Planejamento avançado #1 como plano ativo. O plano de agora fica arquivado e o histórico continua intacto.',
+    'Recarregar', () => {
+      const dietas = DB.get('dietas') || [];
+      dietas.forEach(d => { d.ativa = false; });
+      dietas.push({ ...JSON.parse(JSON.stringify(SEED.dietas[0])),
+                    id: uid(), nome: `Dieta ${dietas.length + 1}`, criadaEm: hoje(), ativa: true });
+      DB.set('dietas', dietas);
+      toast('Plano da clínica recarregado');
       RENDER.ajustes();
     }, { duplo: true });
 }

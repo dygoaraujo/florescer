@@ -185,10 +185,10 @@ const SEED = {
 
   dietas: [{
     id: 'dieta-1',
-    nome: 'Planejamento avançado #1',
+    nome: 'Dieta 1',
     criadaEm: dataLocal(),
     ativa: true,
-    obs: 'Plano da clínica. Proteína animal: peso do alimento cru. Proteína vegetal: peso do alimento cozido.',
+    obs: 'Planejamento alimentar avançado #1, da clínica. Proteína animal: peso do alimento cru. Proteína vegetal: peso do alimento cozido.',
     refeicoes: [
       { id: 'r-cafe', nome: 'Café da manhã', hora: '07:30', grupos: [
         { id: 'g-suco-folha', nome: 'Folha do suco', qtd: 1, selecao: 'unica',
@@ -264,13 +264,22 @@ const SEED = {
   exercicios: ['Academia', 'Caminhada', 'Dança', 'Pilates', 'Musculação', 'Outro'],
 
   // O que costuma acontecer num dia de sessão
+  // A aplicação do Mounjaro é SEMPRE na clínica, junto da sessão — por isso ela
+  // vive aqui e não na lista de medicamentos do dia a dia.
   procedimentos: ['Aplicação de Mounjaro', 'Manta térmica', 'Drenagem linfática', 'Avaliação'],
 };
+
+// Suba este número toda vez que o SEED mudar de verdade (plano novo da clínica,
+// medicamento novo). É o que faz a mudança chegar em quem já abriu o app —
+// sem isso o iniciarDB() só semeia chave que ainda não existe, e o aparelho
+// fica preso no plano antigo pra sempre.
+const SEED_VERSAO = 2;
+const ID_DIETA_CLINICA = 'dieta-clinica-v' + SEED_VERSAO;
 
 const CHAVES_DADOS = [
   'perfil', 'dietas', 'medicamentos', 'exercicios', 'procedimentos',
   'logRefeicoes', 'logAgua', 'logMedicamentos', 'logExercicios',
-  'pesos', 'sessoes', 'scores', 'relatorios', 'conquistas',
+  'pesos', 'sessoes', 'scores', 'relatorios', 'conquistas', 'seedVersao',
 ];
 
 function iniciarDB() {
@@ -290,6 +299,50 @@ function iniciarDB() {
     if (p[k] === undefined) { p[k] = v; mudou = true; }
   });
   if (mudou) DB.set('perfil', p);
+
+  migrarSeed();
+}
+
+/** Leva o plano novo pra quem já tinha o app aberto.
+ *  - Sem histórico de refeição: troca o plano de exemplo direto, sem cerimônia.
+ *  - Com histórico: entra como NOVA versão e arquiva a antiga, porque cada
+ *    registro guarda o dietaId da época e o passado não pode mudar. */
+function migrarSeed() {
+  if ((DB.get('seedVersao') || 1) >= SEED_VERSAO) return;
+
+  const dietas = DB.get('dietas') || [];
+  const jaTem = dietas.some(d => d.id === ID_DIETA_CLINICA);   // guarda anti-duplicata
+  const temHistorico = (DB.get('logRefeicoes') || []).length > 0;
+
+  if (!jaTem) {
+    if (temHistorico) {
+      dietas.forEach(d => { d.ativa = false; });
+      dietas.push({ ...JSON.parse(JSON.stringify(SEED.dietas[0])),
+                    id: ID_DIETA_CLINICA, nome: `Dieta ${dietas.length + 1}`, criadaEm: dataLocal(), ativa: true });
+      DB.set('dietas', dietas);
+    } else {
+      DB.set('dietas', JSON.parse(JSON.stringify(SEED.dietas)));
+    }
+  }
+
+  // Medicamentos: com histórico só acrescenta o que falta (nunca apaga o dela).
+  // Sem histórico, o plano da clínica manda. Em qualquer caso o Mounjaro sai:
+  // a aplicação é sempre na clínica, e virou procedimento da sessão.
+  let meds = temHistorico ? (DB.get('medicamentos') || []) : [];
+  SEED.medicamentos.forEach(m => { if (!meds.some(x => x.id === m.id)) meds.push({ ...m }); });
+  meds = meds.filter(m => !/mounjaro/i.test(m.nome || ''));
+  meds.forEach(m => { if (!m.forma) m.forma = 'capsula'; });   // campo novo
+  DB.set('medicamentos', meds);
+
+  const procs = DB.get('procedimentos') || [];
+  SEED.procedimentos.forEach(p => { if (!procs.includes(p)) procs.push(p); });
+  DB.set('procedimentos', procs);
+
+  const tipos = DB.get('exercicios') || [];
+  SEED.exercicios.forEach(t => { if (!tipos.includes(t)) tipos.push(t); });
+  DB.set('exercicios', tipos);
+
+  DB.set('seedVersao', SEED_VERSAO);
 }
 
 // ── Atalhos de leitura ───────────────────────────────────────────
