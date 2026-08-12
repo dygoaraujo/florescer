@@ -11,7 +11,7 @@ RENDER.progresso = function () {
   const dias14 = ultimosDias(14);
   const p = perfil();
 
-  const pesos = pesosTendencia();
+  const pesos = pesosOrdenados();
   const inicial = p.pesoInicial ?? (pesos[0]?.peso ?? null);
   const atual = pesoAtual();
   const perdido = (inicial != null && atual != null) ? inicial - atual : null;
@@ -166,8 +166,16 @@ const GW = 340, GH = 190;
 const FONTE_SVG = 'font-family="Figtree, sans-serif"';
 
 // ── Gráfico de peso ──────────────────────────────────────────────
+// A curva passa por TODAS as pesagens, na ordem em que aconteceram. Cada ponto
+// é colorido pela origem: em casa, chegada na clínica, saída da clínica. Assim
+// o degrau que a manta térmica cria fica visível e explicado, em vez de sumir.
 function graficoPeso(pesos) {
-  if (pesos.length < 2) return svgVazio('Registre pelo menos duas pesagens para ver a curva.');
+  if (!pesos.length) {
+    return svgVazio('Registre uma pesagem na Agenda e a curva começa aqui.');
+  }
+  if (pesos.length === 1) {
+    return svgVazio(`Primeira pesagem: ${fmt.peso(pesos[0].peso)}. Com a próxima, a curva aparece.`);
+  }
 
   const mX = 16, mT = 20, mB = 26;
   const vals = pesos.map(p => p.peso);
@@ -178,15 +186,20 @@ function graficoPeso(pesos) {
 
   const x = i => mX + (i / (pesos.length - 1)) * (GW - mX * 2);
   const y = v => mT + (1 - (v - min) / span) * (GH - mT - mB);
+  const cor = p => (ORIGEM_PESO[p.origem] || ORIGEM_PESO.casa).cor;
 
   const linha = pesos.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p.peso).toFixed(1)}`).join(' ');
   const area = `${linha} L${x(pesos.length - 1).toFixed(1)},${GH - mB} L${x(0).toFixed(1)},${GH - mB} Z`;
+
+  // Só mostra na legenda as origens que realmente aparecem no período
+  const usadas = [...new Set(pesos.map(p => p.origem || 'casa'))]
+    .filter(o => ORIGEM_PESO[o]);
 
   return `
     <svg class="grafico" viewBox="0 0 ${GW} ${GH}" role="img" aria-label="Evolução do peso">
       <defs>
         <linearGradient id="gp" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%"   stop-color="#D2648B" stop-opacity=".22"/>
+          <stop offset="0%"   stop-color="#D2648B" stop-opacity=".2"/>
           <stop offset="100%" stop-color="#D2648B" stop-opacity="0"/>
         </linearGradient>
       </defs>
@@ -196,18 +209,24 @@ function graficoPeso(pesos) {
         <text x="${GW - mX}" y="${(y(meta) - 6).toFixed(1)}" text-anchor="end"
               font-size="11" fill="#8A6FC7" ${FONTE_SVG}>meta ${esc(String(meta))} kg</text>` : ''}
       <path d="${area}" fill="url(#gp)"/>
-      <path d="${linha}" fill="none" stroke="#D2648B" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
-      ${pesos.map((p, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(p.peso).toFixed(1)}" r="${i === pesos.length - 1 ? 5 : 3}"
-          fill="#fff" stroke="#D2648B" stroke-width="2.2"/>`).join('')}
+      <path d="${linha}" fill="none" stroke="#D2648B" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" opacity=".85"/>
+      ${pesos.map((p, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(p.peso).toFixed(1)}"
+          r="${i === pesos.length - 1 ? 5 : 3.4}" fill="#fff" stroke="${cor(p)}" stroke-width="2.4">
+          <title>${esc(fmt.data(p.data))} · ${esc(fmt.peso(p.peso))} · ${esc((ORIGEM_PESO[p.origem] || ORIGEM_PESO.casa).rotulo)}</title>
+        </circle>`).join('')}
       <text x="${x(pesos.length - 1).toFixed(1)}" y="${(y(vals[vals.length - 1]) - 11).toFixed(1)}" text-anchor="end"
-            font-size="12" font-weight="600" fill="#D2648B" ${FONTE_SVG}>${esc(fmt.peso(vals[vals.length - 1]))}</text>
+            font-size="12" font-weight="600" fill="${cor(pesos[pesos.length - 1])}" ${FONTE_SVG}>${esc(fmt.peso(vals[vals.length - 1]))}</text>
       <text x="${mX}" y="${GH - 6}" font-size="11" fill="#B9B0C0" ${FONTE_SVG}>${esc(fmt.curta(pesos[0].data))}</text>
       <text x="${GW - mX}" y="${GH - 6}" text-anchor="end" font-size="11" fill="#B9B0C0" ${FONTE_SVG}>${esc(fmt.curta(pesos[pesos.length - 1].data))}</text>
-    </svg>`;
+    </svg>
+    ${usadas.length > 1 ? `
+      <div class="legenda-peso">
+        ${usadas.map(o => `<span><i style="border-color:${ORIGEM_PESO[o].cor}"></i>${esc(ORIGEM_PESO[o].rotulo)}</span>`).join('')}
+      </div>` : ''}`;
 }
 
-/** As sessões da clínica, lidas à parte: o que sai na manta é água, e misturar
- *  isso na curva de evolução daria uma leitura falsa de emagrecimento. */
+/** Explica o degrau que aparece na curva nos dias de sessão: boa parte do que
+ *  sai na manta térmica é água, e volta nos dias seguintes. */
 function resumoSessoesHTML() {
   const feitas = (DB.get('sessoes') || [])
     .filter(s => s.pesoEntrada != null && s.pesoSaida != null);
@@ -218,7 +237,8 @@ function resumoSessoesHTML() {
     <div class="nota-grafico">
       <span>${feitas.length} ${feitas.length === 1 ? 'sessão' : 'sessões'} na clínica ·
         média de ${esc(fmt.peso(Math.abs(media)))} ${media >= 0 ? 'a menos' : 'a mais'} na saída</span>
-      <span class="nota-grafico-obs">A curva usa o peso de chegada, medido sempre nas mesmas condições.</span>
+      <span class="nota-grafico-obs">Para comparar semana com semana, use os pesos de chegada:
+        boa parte do que sai na manta é água.</span>
     </div>`;
 }
 

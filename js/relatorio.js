@@ -26,7 +26,7 @@ function diasDaSemana(ini) {
 
 /** Peso mais recente até (e incluindo) uma data. */
 function pesoAte(data) {
-  const ps = pesosTendencia().filter(p => p.data <= data);
+  const ps = pesosOrdenados().filter(p => p.data <= data);
   return ps.length ? ps[ps.length - 1].peso : null;
 }
 

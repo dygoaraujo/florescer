@@ -325,10 +325,13 @@ console.log('\n── Sessão na clínica ────────────�
   eq('as duas pesagens entram no histórico',
      run(ctx, "DB.get('pesos').map(p => p.origem).sort()"), ['sessao-entrada', 'sessao-saida']);
 
-  // O peso de saída é água perdida na manta: não pode virar "emagreceu".
-  eq('a tendência ignora o peso de saída',
-     run(ctx, "pesosTendencia().map(p => p.peso)"), [77.2]);
-  eq('peso atual = o da chegada', run(ctx, 'pesoAtual()'), 77.2);
+  // A curva passa por TODAS as pesagens, na ordem em que aconteceram
+  eq('as duas entram na curva, chegada antes da saída',
+     run(ctx, "pesosOrdenados().map(p => p.peso)"), [77.2, 76.5]);
+  eq('peso atual = a última pesagem', run(ctx, 'pesoAtual()'), 76.5);
+  eq('e cada ponto sabe de onde veio',
+     run(ctx, "pesosOrdenados().map(p => ORIGEM_PESO[p.origem].rotulo)"),
+     ['chegada na clínica', 'saída da clínica']);
 
   run(ctx, `
     { const ss = DB.get('sessoes'); ss[0].pesoEntrada = 76.8; DB.set('sessoes', ss); } sincronizarPesosDaSessao(S());
@@ -652,6 +655,53 @@ console.log('\n── Duração do treino ────────────�
   eq('sem duração, mostra só a contagem', run(ctx, `
     DB.set('logExercicios', [{id:'x',data:hoje(),tipo:'Academia'}]); resumoTreinos();
   `), '1 treino');
+}
+
+console.log('\n── Curva de peso ───────────────────────────');
+{
+  const ctx = novoSandbox();
+
+  // Exatamente o caso que aparecia quebrado: uma sessão só, entrada e saída.
+  // Antes o gráfico filtrava a saída, sobrava 1 ponto e não desenhava nada.
+  run(ctx, `
+    DB.set('sessoes', [{id:'s1',data:hoje(),hora:'09:00',clinica:'X',
+      pesoEntrada:79.4, pesoSaida:78.1, obs:'', procedimentos:['Manta térmica'], feita:true}]);
+    sessaoAberta = 's1';
+    sincronizarPesosDaSessao(DB.get('sessoes')[0]);
+  `);
+  eq('duas pesagens registradas', run(ctx, "DB.get('pesos').length"), 2);
+  eq('a curva desenha com as duas',
+     run(ctx, "graficoPeso(pesosOrdenados()).includes('<svg')"), true);
+  eq('e não cai no aviso de pesagens insuficientes',
+     run(ctx, "graficoPeso(pesosOrdenados()).includes('Registre uma pesagem')"), false);
+  eq('a legenda distingue chegada e saída', run(ctx, `
+    const h = graficoPeso(pesosOrdenados());
+    [h.includes('chegada na clínica'), h.includes('saída da clínica')];
+  `), [true, true]);
+
+  // Uma pesagem só: mostra o número em vez de um vazio seco
+  run(ctx, "DB.set('pesos', [{id:'p',data:hoje(),peso:80,origem:'casa',sessaoId:null}]);");
+  eq('com uma pesagem, mostra o valor',
+     run(ctx, "graficoPeso(pesosOrdenados()).includes('80,0 kg')"), true);
+  eq('sem nenhuma, convida a registrar',
+     run(ctx, "DB.set('pesos', []); graficoPeso(pesosOrdenados()).includes('Registre uma pesagem')"), true);
+
+  // Ordem dentro do mesmo dia: chegada sempre antes da saída
+  run(ctx, `
+    DB.set('pesos', [
+      {id:'b',data:'2026-08-10',peso:78.1,origem:'sessao-saida',sessaoId:'s1'},
+      {id:'a',data:'2026-08-10',peso:79.4,origem:'sessao-entrada',sessaoId:'s1'},
+      {id:'c',data:'2026-08-12',peso:79.0,origem:'casa',sessaoId:null},
+    ]);
+  `);
+  eq('no mesmo dia, chegada vem antes da saída',
+     run(ctx, "pesosOrdenados().map(p => p.peso)"), [79.4, 78.1, 79.0]);
+  eq('a lista da Agenda mostra todas', run(ctx, `
+    (pesagensCasaHTML().match(/pesagem-ponto/g) || []).length;
+  `), 3);
+  eq('mas só a de casa pode ser removida ali', run(ctx, `
+    (pesagensCasaHTML().match(/removerPeso/g) || []).length;
+  `), 1);
 }
 
 console.log(`\n${falhou ? '✗' : '✓'} ${ok} passaram, ${falhou} falharam\n`);

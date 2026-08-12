@@ -1277,6 +1277,32 @@ button.cal-d:active { background: var(--bruma); transform: scale(.92); }
 }
 .nota-grafico-obs { font-size: 11.5px; color: var(--tinta-fraca); }
 
+/* De onde veio cada ponto da curva de peso */
+.legenda-peso {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-top: 10px;
+  font-size: 11.5px;
+  color: var(--tinta-dim);
+}
+.legenda-peso span { display: inline-flex; align-items: center; gap: 5px; }
+.legenda-peso i {
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  background: var(--nuvem);
+  flex-shrink: 0;
+}
+
+.pesagem-ponto {
+  width: 11px; height: 11px;
+  border-radius: 50%;
+  border: 2.5px solid currentColor;
+  background: var(--nuvem);
+  flex-shrink: 0;
+}
+
 /* ── Pétalas ────────────────────────────────────────────────── */
 
 .petalas {

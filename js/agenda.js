@@ -43,7 +43,7 @@ RENDER.agenda = function () {
       <div class="sec"><h2>Já aconteceram</h2></div>
       <div class="cartao">${passadas.map(sessaoItemHTML).join('')}</div>` : ''}
 
-    <div class="sec"><h2>Pesagens em casa</h2></div>
+    <div class="sec"><h2>Pesagens</h2><span class="sub">todas entram na curva</span></div>
     <div class="cartao">
       ${pesagensCasaHTML()}
       <button class="btn btn-vazio btn-sm" style="margin-top:14px" onclick="registrarPeso()">${IC.mais} Pesagem</button>
@@ -57,17 +57,20 @@ function pesosOrdenados() {
     a.data === b.data ? (a.origem === 'sessao-saida' ? 1 : -1) : a.data.localeCompare(b.data));
 }
 
-/** A linha de evolução ignora o peso de SAÍDA da sessão: logo depois da manta
- *  térmica a balança cai por água perdida, não por gordura. O peso de chegada,
- *  medido toda semana nas mesmas condições, é o número honesto. */
-function pesosTendencia() {
-  return pesosOrdenados().filter(p => p.origem !== 'sessao-saida');
-}
-
+/** Peso atual = a última pesagem registrada, de onde quer que ela venha.
+ *  A curva mostra TODAS — casa, chegada e saída da clínica — e cada ponto
+ *  diz de onde veio, para o degrau da manta térmica ficar visível em vez de
+ *  escondido. */
 function pesoAtual() {
-  const ps = pesosTendencia();
+  const ps = pesosOrdenados();
   return ps.length ? ps[ps.length - 1].peso : (perfil().pesoInicial ?? null);
 }
+
+const ORIGEM_PESO = {
+  'casa':            { rotulo: 'em casa',              cor: '#D2648B' },
+  'sessao-entrada':  { rotulo: 'chegada na clínica',   cor: '#8A6FC7' },
+  'sessao-saida':    { rotulo: 'saída da clínica',     cor: '#4F8FB4' },
+};
 
 function pesoResumoHTML() {
   const p = perfil();
@@ -433,16 +436,29 @@ function removerSessao(id) {
   });
 }
 
-// ── Pesagem em casa ──────────────────────────────────────────────
+// ── Todas as pesagens ────────────────────────────────────────────
+// Lista tudo o que entra na curva, dizendo de onde veio. As da clínica são
+// só leitura: pertencem à sessão, e é lá que se corrige.
 function pesagensCasaHTML() {
-  const ps = pesosOrdenados().filter(p => p.origem === 'casa').reverse().slice(0, 10);
-  if (!ps.length) return `<div class="vazio" style="padding:22px"><span class="flor">⚖️</span>Nenhuma pesagem em casa ainda.</div>`;
-  return ps.map(p => `
-    <div class="lista-item">
-      <span class="li-txt"><span class="li-nome">${esc(fmt.peso(p.peso))}</span></span>
-      <span class="li-fim">${esc(fmt.data(p.data))}</span>
-      <button class="btn btn-suave btn-sm" onclick="removerPeso('${esc(p.id)}')" aria-label="Remover">${IC.lixo}</button>
-    </div>`).join('');
+  const ps = pesosOrdenados().slice().reverse().slice(0, 20);
+  if (!ps.length) return `<div class="vazio" style="padding:22px"><span class="flor">⚖️</span>Nenhuma pesagem registrada ainda.</div>`;
+
+  return ps.map(p => {
+    const org = ORIGEM_PESO[p.origem] || ORIGEM_PESO.casa;
+    const daClinica = p.origem !== 'casa';
+    return `
+      <div class="lista-item">
+        <span class="pesagem-ponto" style="border-color:${org.cor}"></span>
+        <span class="li-txt">
+          <span class="li-nome">${esc(fmt.peso(p.peso))}</span>
+          <span class="li-sub">${esc(org.rotulo)}</span>
+        </span>
+        <span class="li-fim">${esc(fmt.curta(p.data))}</span>
+        ${daClinica
+          ? ''
+          : `<button class="btn btn-suave btn-sm" onclick="removerPeso('${esc(p.id)}')" aria-label="Remover">${IC.lixo}</button>`}
+      </div>`;
+  }).join('');
 }
 
 function registrarPeso() {
