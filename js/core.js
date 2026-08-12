@@ -210,25 +210,31 @@ const SEED = {
     ativa: true,
     obs: 'Planejamento alimentar avançado #1, da clínica. Proteína animal: peso do alimento cru. Proteína vegetal: peso do alimento cozido.',
     refeicoes: [
+      // `bloco` junta grupos que são uma coisa só na cabeça dela (o suco verde
+      // é uma receita, não três decisões soltas). `dependeDe` faz um grupo só
+      // aparecer depois de uma escolha — a lista de chás não polui quem tomou café.
       { id: 'r-cafe', nome: 'Café da manhã', hora: '07:30', grupos: [
         // A folha não tem quantidade no plano: é à vontade, e pode misturar.
-        { id: 'g-suco-folha', nome: 'Folhas verdes', qtd: 3, min: 1, selecao: 'multipla',
+        { id: 'g-suco-folha', bloco: 'Suco verde', nome: 'Folhas verdes', qtd: 3, min: 1, selecao: 'multipla',
           obs: 'Pode misturar mais de uma.',
           opcoes: opcoes(CATALOGO.folhasSuco, med(null, 'à vontade')) },
-        { id: 'g-suco-fruta', nome: 'Fruta do suco', qtd: 1, selecao: 'unica',
+        { id: 'g-suco-fruta', bloco: 'Suco verde', nome: 'Fruta', qtd: 1, selecao: 'unica',
           opcoes: opcoes(CATALOGO.frutasSuco) },
         // Itens sem substituto também precisam de check — senão o app não tem
         // como saber que faltou o gengibre, e a refeição passaria por completa.
-        { id: 'g-suco-extra', nome: 'Completar o suco', qtd: 3, min: 3, selecao: 'multipla',
+        { id: 'g-suco-extra', bloco: 'Suco verde', nome: 'Completar', qtd: 3, min: 3, selecao: 'multipla',
           obs: 'Bate tudo junto no liquidificador. Não precisa coar.',
           opcoes: opcoes([['Semente de chia', med(1, 'col chá')], ['Gengibre', med(1, 'pedaço')],
                           ['Água', med(200, 'ml')]]) },
-        { id: 'g-cafe-bebida', nome: 'Bebida quente', qtd: 1, selecao: 'unica',
+        { id: 'g-cafe-bebida', bloco: 'Bebida quente', nome: 'Chá ou café', qtd: 1, selecao: 'unica',
           opcoes: opcoes(['Chá', 'Café'], med(1, 'xc')) },
-        { id: 'g-cafe-prot', nome: 'Proteína', qtd: 1, selecao: 'unica',
+        { id: 'g-cafe-cha', bloco: 'Bebida quente', nome: 'Qual chá', qtd: 1, selecao: 'unica',
+          dependeDe: { grupoId: 'g-cafe-bebida', opcaoId: idDe('Chá') },
+          opcoes: opcoesPorSecao(CATALOGO.chas, med(1, 'xc')) },
+        { id: 'g-cafe-prot', bloco: 'Para comer', nome: 'Proteína', qtd: 1, selecao: 'unica',
           opcoes: opcoes([['Ovo', med(1, 'un')], ['Queijo minas frescal', med(20, 'g')],
                           ['Requeijão light', med(1, 'col sopa')]]) },
-        { id: 'g-cafe-carbo', nome: 'Carboidrato ou fruta', qtd: 1, selecao: 'unica',
+        { id: 'g-cafe-carbo', bloco: 'Para comer', nome: 'Carboidrato ou fruta', qtd: 1, selecao: 'unica',
           opcoes: opcoes([['Pão de forma 100% integral', med(1, 'fatia')], ['Torrada', med(1, 'un')]], null, 'Pães e torradas')
                   .concat(opcoesPorSecao(CATALOGO.frutas)) },
       ]},
@@ -300,7 +306,7 @@ const SEED = {
 // medicamento novo). É o que faz a mudança chegar em quem já abriu o app —
 // sem isso o iniciarDB() só semeia chave que ainda não existe, e o aparelho
 // fica preso no plano antigo pra sempre.
-const SEED_VERSAO = 4;
+const SEED_VERSAO = 5;
 const ID_DIETA_CLINICA = 'dieta-clinica-v' + SEED_VERSAO;
 
 const CHAVES_DADOS = [

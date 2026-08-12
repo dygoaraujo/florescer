@@ -487,7 +487,7 @@ console.log('\n── Mínimo, teto e itens obrigatórios ───────'
   `);
   const log = run(ctx, "DB.get('logRefeicoes').find(l => l.refeicaoId === 'r-cafe')");
   eq('faltando o gengibre, a refeição fica incompleta', log.completa, false);
-  eq('e o app sabe qual grupo faltou', log.faltou, ['Completar o suco']);
+  eq('e o app sabe qual grupo faltou', log.faltou, ['Suco verde · Completar']);
   eq('o registro guarda a hora do plano pra comparar', log.horaPlanejada, '07:30');
 }
 
@@ -547,6 +547,99 @@ console.log('\n── Horários para os alarmes ──────────�
     const m = DB.get('medicamentos'); m[0].ativo = false; DB.set('medicamentos', m);
     horariosDoDia().some(l => l.o.startsWith(m[0].nome));
   `), false);
+}
+
+console.log('\n── Grupo condicional (chá x café) ──────────');
+{
+  const ctx = novoSandbox();
+  run(ctx, "abrirRefeicao('r-cafe');");
+
+  eq('a lista de chás começa escondida', run(ctx, `
+    gruposAtivos().some(g => g.id === 'g-cafe-cha');
+  `), false);
+  eq('e não conta como grupo que falta', run(ctx, `
+    gruposAtivos().filter(g => !grupoCompleto(g)).some(g => g.id === 'g-cafe-cha');
+  `), false);
+
+  run(ctx, "escolher('g-cafe-bebida', idDe('Chá'));");
+  eq('escolheu chá: a lista aparece', run(ctx, `
+    gruposAtivos().some(g => g.id === 'g-cafe-cha');
+  `), true);
+
+  run(ctx, "escolher('g-cafe-cha', idDe('Camomila'));");
+  eq('marcou camomila', run(ctx, "sel['g-cafe-cha'].map(i => i.nome)"), ['Camomila']);
+
+  run(ctx, "escolher('g-cafe-bebida', idDe('Café'));");
+  eq('trocou pra café: a lista some', run(ctx, `
+    gruposAtivos().some(g => g.id === 'g-cafe-cha');
+  `), false);
+  eq('e a camomila não fica de fantasma', run(ctx, "sel['g-cafe-cha'].length"), 0);
+
+  // Café não exige escolher chá: a refeição fecha completa sem ele
+  run(ctx, `
+    const c = dietaAtiva().refeicoes[0];
+    c.grupos.filter(g => g.id !== 'g-cafe-cha' && g.id !== 'g-cafe-bebida')
+      .forEach(g => { const min = g.min != null ? g.min : g.qtd;
+        for (let k = 0; k < min; k++) escolher(g.id, g.opcoes[k].id); });
+    confirmarRefeicao();
+  `);
+  eq('com café, a refeição fecha completa',
+     run(ctx, "DB.get('logRefeicoes').find(l => l.refeicaoId === 'r-cafe').completa"), true);
+  eq('e o chá não entra no registro', run(ctx, `
+    DB.get('logRefeicoes').find(l => l.refeicaoId === 'r-cafe').escolhas.some(e => e.grupoId === 'g-cafe-cha');
+  `), false);
+}
+
+console.log('\n── Blocos e hierarquia ─────────────────────');
+{
+  const ctx = novoSandbox();
+  const cafe = run(ctx, 'dietaAtiva().refeicoes[0]');
+  eq('os três grupos do suco vivem no mesmo bloco',
+     cafe.grupos.filter(g => g.bloco === 'Suco verde').map(g => g.nome),
+     ['Folhas verdes', 'Fruta', 'Completar']);
+  eq('chá e café ficam em Bebida quente',
+     cafe.grupos.filter(g => g.bloco === 'Bebida quente').map(g => g.nome),
+     ['Chá ou café', 'Qual chá']);
+  eq('o nome cheio explica o grupo fora do sheet', run(ctx, `
+    abrirRefeicao('r-cafe');
+    nomeCheio(dietaAtiva().refeicoes[0].grupos.find(g => g.id === 'g-suco-extra'));
+  `), 'Suco verde · Completar');
+
+  // Oleaginosas tem uma seção só: o subtítulo repetiria o nome do grupo
+  eq('grupo com uma seção só não repete subtítulo', run(ctx, `
+    abrirRefeicao('r-lm');
+    const g = dietaAtiva().refeicoes[1].grupos[0];
+    const html = chipsHTML(g, g.opcoes, [], false);
+    html.includes('subgrupo-tit');
+  `), false);
+  eq('mas o chá, com 4 seções, mantém os subtítulos', run(ctx, `
+    const gc = dietaAtiva().refeicoes[1].grupos[1];
+    (chipsHTML(gc, gc.opcoes, [], false).match(/subgrupo-tit/g) || []).length;
+  `), 4);
+}
+
+console.log('\n── Duração do treino ───────────────────────');
+{
+  const ctx = novoSandbox();
+  run(ctx, "abrirExercicio(); selecionarExercicio('Caminhada'); definirDuracao(45); confirmarExercicio();");
+  const log = run(ctx, "DB.get('logExercicios')[0]");
+  eq('guarda tipo e duração', [log.tipo, log.duracao], ['Caminhada', 45]);
+  eq('e a hora do registro', /^\d{2}:\d{2}$/.test(log.hora), true);
+
+  eq('o −/+ não deixa zerar', run(ctx, "abrirExercicio(); definirDuracao(-10); exercicioMin;"), 5);
+  eq('nem passar de 5 horas', run(ctx, "definirDuracao(999); exercicioMin;"), 300);
+
+  run(ctx, `
+    DB.set('logExercicios', [
+      {id:'a',data:somaDias(hoje(),-1),tipo:'Academia',duracao:60},
+      {id:'b',data:somaDias(hoje(),-2),tipo:'Caminhada',duracao:30},
+      {id:'c',data:somaDias(hoje(),-3),tipo:'Dança',duracao:50},
+    ]);
+  `);
+  eq('o resumo soma o tempo', run(ctx, 'resumoTreinos()'), '3 treinos · 2h20');
+  eq('sem duração, mostra só a contagem', run(ctx, `
+    DB.set('logExercicios', [{id:'x',data:hoje(),tipo:'Academia'}]); resumoTreinos();
+  `), '1 treino');
 }
 
 console.log(`\n${falhou ? '✗' : '✓'} ${ok} passaram, ${falhou} falharam\n`);

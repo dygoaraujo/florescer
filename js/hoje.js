@@ -163,8 +163,7 @@ function cardAgoraHTML(i) {
   let oque = '', acoes = '';
 
   if (i.tipo === 'refeicao') {
-    const nomes = i.ref.grupos.map(g => (g.qtd > 1 ? g.qtd + ' ' : '') + g.nome.toLowerCase());
-    oque = nomes.slice(0, 3).join(' · ') + (nomes.length > 3 ? ` +${nomes.length - 3}` : '');
+    oque = resumoRefeicao(i.ref);
     acoes = `<button class="btn btn-cheio" onclick="abrirRefeicao('${esc(i.id)}')">Montar ${primeiraPalavra(i.nome)}</button>`;
   } else if (i.tipo === 'remedio') {
     oque = [i.ref.dose, i.ref.obs].filter(Boolean).join(' · ');
@@ -200,6 +199,19 @@ function cardAgoraHTML(i) {
 }
 
 const primeiraPalavra = s => String(s).split(' ')[0].toLowerCase();
+
+/** Resumo curto do que a refeição pede. Onde existe bloco, o bloco é o nome
+ *  que importa ("Suco verde", não "folhas + fruta + completar"), e grupos que
+ *  só aparecem depois de uma escolha ficam de fora. */
+function resumoRefeicao(r) {
+  const nomes = [];
+  r.grupos.forEach(g => {
+    if (g.dependeDe) return;
+    const nome = (g.bloco || g.nome).toLowerCase();
+    if (!nomes.includes(nome)) nomes.push(nome);
+  });
+  return nomes.slice(0, 3).join(' · ') + (nomes.length > 3 ? ` +${nomes.length - 3}` : '');
+}
 
 function fimDoDiaHTML(itens, nota) {
   if (!itens.length) {
@@ -378,7 +390,7 @@ function abrirRefeicao(refeicaoId) {
     <div class="sheet-cabeca">
       <div>
         <h2>${esc(r.nome)}</h2>
-        <div class="dica">${esc(r.grupos.map(g => `${g.qtd} ${g.nome.toLowerCase()}`).join(' · '))}</div>
+        <div class="dica">${esc(resumoRefeicao(r))}</div>
       </div>
       <button class="sheet-x" onclick="fecharSheet()" aria-label="Fechar">✕</button>
     </div>
@@ -403,13 +415,45 @@ const minDoGrupo = g => (g.min != null ? g.min : g.qtd);
 function grupoCompleto(g) { return (sel[g.id] || []).length >= minDoGrupo(g); }
 const grupoCheio  = g => (sel[g.id] || []).length >= g.qtd;
 
+/** Um grupo pode depender de uma escolha anterior (a lista de chás só existe
+ *  se ela marcou "Chá"). Grupo inativo não aparece nem entra na completude. */
+function grupoAtivo(g) {
+  if (!g.dependeDe) return true;
+  return (sel[g.dependeDe.grupoId] || []).some(it => it.opcaoId === g.dependeDe.opcaoId);
+}
+
+const gruposAtivos = () => refAtual.grupos.filter(grupoAtivo);
+
+/** Fora do sheet, "Completar" sozinho não diz nada — no relatório vira
+ *  "Suco verde · Completar". */
+const nomeCheio = g => (g.bloco ? g.bloco + ' · ' : '') + g.nome;
+
 function renderGrupos() {
   const cx = document.getElementById('sheet-grupos');
   if (!cx) return;
+
+  // Três níveis de leitura: BLOCO (o suco verde inteiro) › grupo (folhas) ›
+  // subgrupo (calmantes). Sem essa hierarquia tudo tinha o mesmo peso e a
+  // tela virava uma lista embolada.
+  const blocos = [];
+  gruposAtivos().forEach(g => {
+    const nome = g.bloco || null;
+    const ultimo = blocos[blocos.length - 1];
+    if (ultimo && ultimo.nome === nome) ultimo.grupos.push(g);
+    else blocos.push({ nome, grupos: [g] });
+  });
+
   // O botão de confirmar mora no FIM da rolagem, depois do último grupo: assim
   // ela passa o olho por tudo antes de salvar, em vez de marcar o primeiro
   // item e apertar salvar sem ver o resto.
-  cx.innerHTML = refAtual.grupos.map(grupoHTML).join('') + '<div id="fim-grupos"></div>';
+  cx.innerHTML = blocos.map(b => b.nome
+    ? `<section class="bloco">
+         <h3 class="bloco-tit">${esc(b.nome)}</h3>
+         ${b.grupos.map(grupoHTML).join('')}
+       </section>`
+    : `<section class="bloco bloco-solto">${b.grupos.map(grupoHTML).join('')}</section>`
+  ).join('') + '<div id="fim-grupos"></div>';
+
   renderFimGrupos();
 }
 
@@ -418,7 +462,7 @@ function renderFimGrupos() {
   if (!cx) return;
 
   const total = Object.values(sel).reduce((s, a) => s + a.length, 0);
-  const faltando = refAtual.grupos.filter(g => !grupoCompleto(g));
+  const faltando = gruposAtivos().filter(g => !grupoCompleto(g));
   const jaFeita = (DB.get('logRefeicoes') || [])
     .some(l => l.data === hoje() && l.refeicaoId === refAtual.id && l.status === 'feita');
   const anterior = ultimaEscolha(refAtual.id);
@@ -427,7 +471,7 @@ function renderFimGrupos() {
     ${anterior && !total ? `<button class="btn btn-vazio btn-sm" style="width:100%;margin-bottom:10px"
         onclick="repetirUltima()">↺ Repetir o que comi da última vez</button>` : ''}
     ${total && faltando.length ? `<div class="aviso-falta">
-        Falta ${esc(fmt.lista(faltando.map(g => g.nome)))}. Pode confirmar assim mesmo —
+        Falta ${esc(fmt.lista(faltando.map(nomeCheio)))}. Pode confirmar assim mesmo —
         o relatório registra o que ficou de fora.</div>` : ''}
     <button class="btn btn-cheio" style="width:100%;margin-top:12px" onclick="confirmarRefeicao()"
       ${total ? '' : 'disabled'}>
@@ -442,7 +486,7 @@ function renderFimGrupos() {
 /** Rola até o primeiro grupo que ainda falta — é o que a barra de baixo faz
  *  enquanto a refeição não está completa. */
 function irParaGrupoQueFalta() {
-  const g = refAtual.grupos.find(x => !grupoCompleto(x));
+  const g = gruposAtivos().find(x => !grupoCompleto(x));
   const alvo = g && document.getElementById('grupo-' + g.id);
   const corpo = document.getElementById('sheet-grupos');
   if (!alvo || !corpo) return;
@@ -465,7 +509,7 @@ function grupoHTML(g, gi) {
   return `
     <div class="grupo ${completo ? 'completo' : ''}" id="grupo-${esc(g.id)}">
       <div class="grupo-topo">
-        <span class="rotulo">${esc(g.nome)}</span>
+        <span class="grupo-nome">${esc(g.nome)}</span>
         <span class="grupo-cont num">${escolhidos.length} de ${min}${completo ? ' ✓' : ''}${
           !completo && g.qtd > min ? ` · até ${g.qtd}` : ''}</span>
       </div>
@@ -521,6 +565,10 @@ function chipsHTML(g, lista, escolhidos, cheio) {
     if (s) s.itens.push(o); else secoes.push({ nome, itens: [o] });
   });
 
+  // Uma seção só? O subtítulo repetiria o nome do grupo ("OLEAGINOSAS" duas
+  // vezes seguidas). Nesse caso ele não acrescenta nada e sai.
+  if (secoes.length === 1) return `<div class="chips">${lista.map(chip).join('')}</div>`;
+
   return secoes.map(s => `
     <div class="subgrupo">
       <div class="subgrupo-tit">${esc(s.nome)}</div>
@@ -534,12 +582,13 @@ const nomeOpcao = (g, id) => (g.opcoes.find(o => o.id === id) || {}).nome || '';
 function filtrarGrupo(grupoId, texto) {
   buscaGrupo[grupoId] = texto;
   const g = refAtual.grupos.find(x => x.id === grupoId);
-  const gi = refAtual.grupos.indexOf(g);
-  // Redesenha só este grupo, pra não perder o foco do campo de busca.
-  const alvo = document.querySelectorAll('#sheet-grupos .grupo')[gi];
-  if (!alvo) return renderGrupos();
+  // Redesenha só este grupo (achado pelo id, não pela posição), pra não perder
+  // o foco do campo de busca enquanto ela digita.
+  const alvo = document.getElementById('grupo-' + grupoId);
+  if (!g || !alvo) return renderGrupos();
+
   const molde = document.createElement('div');
-  molde.innerHTML = grupoHTML(g, gi);
+  molde.innerHTML = grupoHTML(g);
   const novo = molde.firstElementChild;
   const campo = alvo.querySelector('.busca-grupo');
   const pos = campo ? campo.selectionStart : null;
@@ -551,6 +600,14 @@ function filtrarGrupo(grupoId, texto) {
 function abrirGrupo(grupoId) {
   gruposAbertos.add(grupoId);
   renderGrupos();
+}
+
+/** Trocou "Chá" por "Café"? A lista de chás some — e o que ela tinha marcado
+ *  lá dentro tem que sair junto, senão viraria escolha fantasma no registro. */
+function limparGruposInativos() {
+  refAtual.grupos.forEach(g => {
+    if (!grupoAtivo(g) && (sel[g.id] || []).length) sel[g.id] = [];
+  });
 }
 
 function escolher(grupoId, opcaoId) {
@@ -566,6 +623,7 @@ function escolher(grupoId, opcaoId) {
   } else if (g.selecao === 'unica' && g.qtd === 1) {
     sel[grupoId] = [novo()];                 // troca direta, sem desmarcar antes
     gruposAbertos.delete(grupoId);
+    limparGruposInativos();
     renderGrupos();
     return renderPeRefeicao();
   } else if (atual.length < g.qtd) {
@@ -575,6 +633,7 @@ function escolher(grupoId, opcaoId) {
     return;                                   // grupo cheio: ignora o toque
   }
   sel[grupoId] = atual;
+  limparGruposInativos();
   renderGrupos();
   renderPeRefeicao();
 }
@@ -604,8 +663,9 @@ function renderPeRefeicao() {
   if (!pe) return;
   renderFimGrupos();
 
-  const feitos = refAtual.grupos.filter(grupoCompleto).length;
-  const total = refAtual.grupos.length;
+  const ativos = gruposAtivos();
+  const feitos = ativos.filter(grupoCompleto).length;
+  const total = ativos.length;
   const completa = feitos === total;
 
   pe.innerHTML = completa
@@ -644,12 +704,12 @@ function repetirUltima() {
 }
 
 function confirmarRefeicao() {
-  const escolhas = refAtual.grupos
+  const escolhas = gruposAtivos()
     .map(g => ({ grupoId: g.id, grupoNome: g.nome, itens: sel[g.id] || [] }))
     .filter(e => e.itens.length);
   if (!escolhas.length) return;
 
-  const faltou = refAtual.grupos.filter(g => !grupoCompleto(g)).map(g => g.nome);
+  const faltou = gruposAtivos().filter(g => !grupoCompleto(g)).map(nomeCheio);
 
   const logs = DB.get('logRefeicoes') || [];
   const i = logs.findIndex(l => l.data === hoje() && l.refeicaoId === refAtual.id);
@@ -683,7 +743,7 @@ function pularRefeicao() {
     id: i >= 0 ? logs[i].id : uid(),
     data: hoje(), dietaId: dietaAtiva().id, refeicaoId: refAtual.id, refeicaoNome: refAtual.nome,
     hora: horaLocal(), horaPlanejada: refAtual.hora,
-    escolhas: [], completa: false, faltou: refAtual.grupos.map(g => g.nome), status: 'pulada',
+    escolhas: [], completa: false, faltou: gruposAtivos().map(nomeCheio), status: 'pulada',
   };
   if (i >= 0) logs[i] = reg; else logs.push(reg);
   DB.set('logRefeicoes', logs);
@@ -748,38 +808,71 @@ function desmarcarMedicamento(medId) {
 // ══ EXERCÍCIO ══════════════════════════════════════════════════
 
 let exercicioSel = null;
+let exercicioMin = 30;                          // duração em minutos
+
+const DURACOES = [15, 20, 30, 45, 60, 90];
 
 function abrirExercicio() {
-  const tipos = DB.get('exercicios') || SEED.exercicios;
   const log = (DB.get('logExercicios') || []).find(l => l.data === hoje());
   exercicioSel = log ? log.tipo : null;
+  exercicioMin = log && log.duracao ? log.duracao : 30;
 
   abrirSheet(`
     <div class="sheet-alca"></div>
     <div class="sheet-cabeca">
       <div>
         <h2>Exercício de hoje</h2>
-        <div class="dica">O que você fez?</div>
+        <div class="dica">O que você fez e por quanto tempo?</div>
       </div>
       <button class="sheet-x" onclick="fecharSheet()" aria-label="Fechar">✕</button>
     </div>
-    <div class="sheet-corpo">
-      <div class="chips" id="ex-chips">
+    <div class="sheet-corpo" id="ex-corpo"></div>
+    <div class="sheet-pe" id="ex-pe"></div>
+  `);
+  renderExercicio();
+}
+
+function renderExercicio() {
+  const cx = document.getElementById('ex-corpo');
+  if (!cx) return;
+  const tipos = DB.get('exercicios') || SEED.exercicios;
+
+  cx.innerHTML = `
+    <div class="grupo">
+      <div class="grupo-topo"><span class="grupo-nome">Tipo de treino</span></div>
+      <div class="chips">
         ${tipos.map(t => `<button class="chip ${exercicioSel === t ? 'on' : ''}"
             onclick="selecionarExercicio('${esc(t)}')">${esc(t)}</button>`).join('')}
       </div>
     </div>
-    <div class="sheet-pe" id="ex-pe"></div>
-  `);
+
+    <div class="grupo">
+      <div class="grupo-topo">
+        <span class="grupo-nome">Duração</span>
+        <span class="grupo-cont num">${exercicioMin} min</span>
+      </div>
+      <div class="chips" style="margin-bottom:10px">
+        ${DURACOES.map(m => `<button class="chip ${exercicioMin === m ? 'on' : ''}"
+            onclick="definirDuracao(${m})">${m} min</button>`).join('')}
+      </div>
+      <div class="stepper" style="width:fit-content">
+        <button onclick="definirDuracao(${Math.max(5, exercicioMin - 5)})" aria-label="Diminuir">−</button>
+        <span class="stepper-v num">${exercicioMin} min</span>
+        <button onclick="definirDuracao(${exercicioMin + 5})" aria-label="Aumentar">+</button>
+      </div>
+    </div>`;
+
   renderPeExercicio();
 }
 
 function selecionarExercicio(t) {
   exercicioSel = exercicioSel === t ? null : t;
-  document.querySelectorAll('#ex-chips .chip').forEach(c => {
-    c.classList.toggle('on', c.textContent.trim() === exercicioSel);
-  });
-  renderPeExercicio();
+  renderExercicio();
+}
+
+function definirDuracao(m) {
+  exercicioMin = Math.max(5, Math.min(300, m));
+  renderExercicio();
 }
 
 function renderPeExercicio() {
@@ -788,7 +881,9 @@ function renderPeExercicio() {
   const jaFeito = (DB.get('logExercicios') || []).some(l => l.data === hoje());
   pe.innerHTML = `
     <button class="btn btn-cheio btn-lavanda" style="width:100%${exercicioSel ? '' : ';opacity:.4'}"
-      onclick="confirmarExercicio()" ${exercicioSel ? '' : 'disabled'}>Concluir treino</button>
+      onclick="confirmarExercicio()" ${exercicioSel ? '' : 'disabled'}>
+      ${exercicioSel ? `Concluir ${exercicioMin} min de ${esc(exercicioSel.toLowerCase())}` : 'Escolha o tipo de treino'}
+    </button>
     ${jaFeito ? `<button class="link-fraco" onclick="desmarcarExercicio()">Desmarcar o treino de hoje</button>` : ''}
   `;
 }
@@ -796,10 +891,10 @@ function renderPeExercicio() {
 function confirmarExercicio() {
   if (!exercicioSel) return;
   const logs = (DB.get('logExercicios') || []).filter(l => l.data !== hoje());
-  logs.push({ id: uid(), data: hoje(), tipo: exercicioSel, obs: '' });
+  logs.push({ id: uid(), data: hoje(), tipo: exercicioSel, duracao: exercicioMin, hora: horaLocal(), obs: '' });
   DB.set('logExercicios', logs);
   fecharSheet();
-  toast(`${exercicioSel} registrado 💜`);
+  toast(`${exercicioSel} · ${exercicioMin} min 💜`);
   checarConquistas();
   RENDER.hoje();
 }

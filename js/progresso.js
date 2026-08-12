@@ -6,10 +6,6 @@
 // Um dia entra na sequência quando a nota fecha em 70% ou mais.
 const NOTA_SEQUENCIA = 70;
 
-// Qual gráfico de detalhe está aberto. Os três não cabem juntos numa tela de
-// celular sem virar parede de scroll — e a tela precisa abrir no que interessa.
-let detalheProgresso = 'agua';   // agua | aderencia | treinos
-
 RENDER.progresso = function () {
   const seq = sequencia();
   const dias14 = ultimosDias(14);
@@ -71,12 +67,19 @@ RENDER.progresso = function () {
       <button class="btn btn-vazio btn-sm peso-hero-btn" onclick="ir('agenda')">Registrar uma pesagem</button>
     </div>
 
-    <div class="sec"><h2>Detalhes</h2></div>
-    <div class="chips" style="margin-bottom:14px">
-      ${[['agua', 'Água'], ['aderencia', 'Aderência'], ['treinos', 'Treinos'], ['sono', 'Sono']].map(([v, l]) =>
-        `<button class="chip ${detalheProgresso === v ? 'on' : ''}" onclick="verDetalhe('${v}')">${l}</button>`).join('')}
-    </div>
-    <div class="cartao" id="detalhe-cx"></div>
+    <!-- Esta é A tela de métricas: tudo fica à vista, sem obrigar a escolher
+         qual gráfico ver. -->
+    <div class="sec"><h2>Água</h2><span class="sub">últimos 14 dias</span></div>
+    <div class="cartao">${graficoAgua(dias14)}</div>
+
+    <div class="sec"><h2>Aderência</h2><span class="sub">nota de cada dia</span></div>
+    <div class="cartao">${graficoAderencia(dias14)}</div>
+
+    <div class="sec"><h2>Treinos</h2><span class="sub">${resumoTreinos()}</span></div>
+    <div class="cartao">${heatmapTreinos()}</div>
+
+    <div class="sec"><h2>Sono</h2></div>
+    <div class="cartao">${listaSono(dias14)}</div>
 
     <div class="sec"><h2>Conquistas</h2>
       <span class="sub">${(DB.get('conquistas') || []).length} de ${MEDALHAS.length}</span></div>
@@ -86,21 +89,18 @@ RENDER.progresso = function () {
     <div id="cartao-relatorio"></div>
   `;
 
-  renderDetalhe();
   if (typeof renderCartaoRelatorio === 'function') renderCartaoRelatorio();
   if (typeof renderAvisoRelatorio === 'function') renderAvisoRelatorio();
 };
 
-function verDetalhe(v) { detalheProgresso = v; RENDER.progresso(); }
-
-function renderDetalhe() {
-  const cx = document.getElementById('detalhe-cx');
-  if (!cx) return;
-  const dias14 = ultimosDias(14);
-  cx.innerHTML = detalheProgresso === 'agua'      ? graficoAgua(dias14)
-               : detalheProgresso === 'aderencia' ? graficoAderencia(dias14)
-               : detalheProgresso === 'sono'      ? listaSono(dias14)
-               :                                    heatmapTreinos();
+/** "12 treinos · 6h20 no total" — o tempo agora é registrado em cada treino. */
+function resumoTreinos() {
+  const logs = DB.get('logExercicios') || [];
+  if (!logs.length) return 'últimas 12 semanas';
+  const min = logs.reduce((s, l) => s + (l.duracao || 0), 0);
+  if (!min) return `${logs.length} ${logs.length === 1 ? 'treino' : 'treinos'}`;
+  const h = Math.floor(min / 60);
+  return `${logs.length} ${logs.length === 1 ? 'treino' : 'treinos'} · ${h ? h + 'h' : ''}${String(min % 60).padStart(h ? 2 : 1, '0')}${h ? '' : ' min'}`;
 }
 
 /** Sono: o que interessa é o horário, não a duração — a clínica pediu

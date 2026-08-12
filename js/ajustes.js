@@ -27,7 +27,7 @@ RENDER.ajustes = function () {
         <button class="lista-item" onclick="editarRefeicao('${esc(r.id)}')">
           <span class="li-txt">
             <span class="li-nome">${esc(r.nome)}</span>
-            <span class="li-sub">${esc(r.grupos.map(g => `${g.qtd} ${g.nome.toLowerCase()}`).join(' · ')) || 'sem grupos'}</span>
+            <span class="li-sub">${esc(r.grupos.map(g => g.nome).join(' · ')) || 'sem grupos'}</span>
           </span>
           <span class="li-fim">${esc(r.hora)}</span>
           <span style="color:var(--tinta-fraca)">${IC.seta}</span>

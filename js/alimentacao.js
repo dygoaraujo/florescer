@@ -78,7 +78,7 @@ function comidaHojeHTML() {
   return `<div class="cartao">
     ${dieta.refeicoes.map(r => {
       const l = logs.find(x => x.refeicaoId === r.id);
-      const pediu = r.grupos.map(g => `${g.qtd} ${g.nome.toLowerCase()}`).join(' · ');
+      const pediu = resumoRefeicao(r);
       let sub, marca;
       if (!l)                         { sub = pediu;            marca = `<span class="pill">a fazer</span>`; }
       else if (l.status === 'pulada') { sub = 'não foi feita';  marca = `<span class="pill">pulada</span>`; }
