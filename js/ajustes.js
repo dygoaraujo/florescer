@@ -1,0 +1,550 @@
+/* ══ FLORESCER — Ajustes ═════════════════════════════════════════
+   Configuração: plano alimentar, medicamentos, metas, sync, backup.
+   Só UMA dieta ativa. Trocar de plano cria uma NOVA versão e arquiva a
+   antiga — nunca apaga, porque cada log guarda o dietaId da época.
+   ════════════════════════════════════════════════════════════════ */
+
+RENDER.ajustes = function () {
+  const p = perfil();
+  const dieta = dietaAtiva();
+  const dietas = DB.get('dietas') || [];
+  const arquivadas = dietas.filter(d => !d.ativa);
+  const meds = DB.get('medicamentos') || [];
+  const tipos = DB.get('exercicios') || [];
+
+  document.getElementById('tela-ajustes').innerHTML = `
+    <header class="cabeca">
+      <div class="cabeca-txt">
+        <h1>Ajustes</h1>
+        <div class="data">o plano por trás do dia</div>
+      </div>
+    </header>
+
+    <div class="sec"><h2>Plano alimentar</h2>
+      <span class="sub">${dieta ? esc(dieta.nome) : 'nenhum'}</span></div>
+    <div class="cartao">
+      ${dieta ? dieta.refeicoes.map(r => `
+        <button class="lista-item" onclick="editarRefeicao('${esc(r.id)}')">
+          <span class="li-txt">
+            <span class="li-nome">${esc(r.nome)}</span>
+            <span class="li-sub">${esc(r.grupos.map(g => `${g.qtd} ${g.nome.toLowerCase()}`).join(' · ')) || 'sem grupos'}</span>
+          </span>
+          <span class="li-fim">${esc(r.hora)}</span>
+          <span style="color:var(--tinta-fraca)">${IC.seta}</span>
+        </button>`).join('') : '<div class="vazio">Nenhum plano cadastrado.</div>'}
+      <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
+        <button class="btn btn-vazio btn-sm" onclick="novaRefeicao()">${IC.mais} Refeição</button>
+        <button class="btn btn-vazio btn-sm" onclick="novaVersaoDieta()">Nova versão do plano</button>
+      </div>
+    </div>
+    ${arquivadas.length ? `
+      <div class="cartao">
+        <div class="rotulo" style="margin-bottom:10px">Versões anteriores</div>
+        ${arquivadas.map(d => `
+          <div class="lista-item">
+            <span class="li-txt">
+              <span class="li-nome">${esc(d.nome)}</span>
+              <span class="li-sub">criado em ${esc(fmt.data(d.criadaEm))}</span>
+            </span>
+            <button class="btn btn-suave btn-sm" onclick="ativarDieta('${esc(d.id)}')">Reativar</button>
+          </div>`).join('')}
+      </div>` : ''}
+
+    <div class="sec"><h2>Medicamentos e vitaminas</h2></div>
+    <div class="cartao">
+      ${meds.length ? meds.map(m => `
+        <button class="lista-item" onclick="editarMedicamento('${esc(m.id)}')">
+          <span class="li-txt">
+            <span class="li-nome">${esc(m.nome)}${m.ativo ? '' : ' <span class="pill">pausado</span>'}</span>
+            <span class="li-sub">${esc([m.dose, freqTexto(m)].filter(Boolean).join(' · '))}</span>
+          </span>
+          <span class="li-fim">${esc(m.hora)}</span>
+          <span style="color:var(--tinta-fraca)">${IC.seta}</span>
+        </button>`).join('') : '<div class="vazio">Nada cadastrado ainda.</div>'}
+      <button class="btn btn-vazio btn-sm" style="margin-top:14px" onclick="editarMedicamento()">${IC.mais} Medicamento</button>
+    </div>
+
+    <div class="sec"><h2>Metas do dia</h2></div>
+    <div class="cartao">
+      <div class="campo">
+        <label for="aj-agua">Meta de água por dia</label>
+        <div style="display:flex;gap:9px;align-items:center">
+          <input id="aj-agua" type="number" inputmode="numeric" step="100" min="500" max="8000"
+                 value="${p.metaAgua}" onchange="salvarPerfil('metaAgua', Number(this.value))">
+          <span style="color:var(--tinta-dim);font-size:14px;flex-shrink:0">ml</span>
+        </div>
+      </div>
+      <div class="campo">
+        <label>Dias de exercício</label>
+        <div class="toggles">
+          ${DIAS_LETRA.map((l, k) => `
+            <button class="toggle ${(p.diasExercicio || []).includes(k) ? 'on' : ''}"
+              onclick="alternarDiaExercicio(${k})" aria-label="${DIAS_CURTOS[k]}">${l}</button>`).join('')}
+        </div>
+      </div>
+      <div class="campo-dupla">
+        <div class="campo">
+          <label for="aj-hex">Horário do treino</label>
+          <input id="aj-hex" type="time" value="${esc(p.horaExercicio || '18:00')}"
+                 onchange="salvarPerfil('horaExercicio', this.value)">
+        </div>
+        <div class="campo">
+          <label for="aj-mex">Meta na semana</label>
+          <input id="aj-mex" type="number" inputmode="numeric" min="0" max="7" value="${p.metaSemanalExercicio}"
+                 onchange="salvarPerfil('metaSemanalExercicio', Number(this.value))">
+        </div>
+      </div>
+      <div class="campo" style="margin-bottom:0">
+        <label>Tipos de treino</label>
+        <div class="chips">
+          ${tipos.map(t => `<button class="chip" onclick="removerTipoExercicio('${esc(t)}')">${esc(t)} ✕</button>`).join('')}
+          <button class="chip" onclick="novoTipoExercicio()" style="color:var(--tinta-dim)">${IC.mais}</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="sec"><h2>Perfil</h2></div>
+    <div class="cartao">
+      <div class="campo">
+        <label for="aj-nome">Nome</label>
+        <input id="aj-nome" type="text" value="${esc(p.nome || '')}" onchange="salvarPerfil('nome', this.value)">
+      </div>
+      <div class="campo-dupla">
+        <div class="campo">
+          <label for="aj-pi">Peso inicial</label>
+          <input id="aj-pi" type="number" inputmode="decimal" step="0.1" placeholder="kg"
+                 value="${p.pesoInicial ?? ''}" onchange="salvarPerfil('pesoInicial', this.value === '' ? null : Number(this.value))">
+        </div>
+        <div class="campo">
+          <label for="aj-pm">Peso desejado</label>
+          <input id="aj-pm" type="number" inputmode="decimal" step="0.1" placeholder="kg"
+                 value="${p.pesoMeta ?? ''}" onchange="salvarPerfil('pesoMeta', this.value === '' ? null : Number(this.value))">
+        </div>
+      </div>
+      <div class="campo" style="margin-bottom:0">
+        <label for="aj-ini">Início do tratamento</label>
+        <input id="aj-ini" type="date" value="${esc(p.inicioTratamento || hoje())}"
+               onchange="salvarPerfil('inicioTratamento', this.value)">
+      </div>
+    </div>
+
+    <div class="sec"><h2>Seus dados</h2></div>
+    <div id="sync-ui"></div>
+    <div class="cartao">
+      <div class="rotulo" style="margin-bottom:4px">Backup no aparelho</div>
+      <p style="font-size:13px;color:var(--tinta-dim);line-height:1.55;margin-bottom:14px">
+        Baixa um arquivo com tudo. Guarde de vez em quando — é a rede de segurança se o celular limpar o app.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-vazio btn-sm" onclick="baixarBackup()">Baixar backup</button>
+        <button class="btn btn-vazio btn-sm" onclick="document.getElementById('arq-import').click()">Restaurar backup</button>
+        <input type="file" id="arq-import" accept="application/json" style="display:none" onchange="restaurarBackup(this)">
+      </div>
+      <button class="link-fraco" style="margin-top:6px" onclick="apagarTudo()">Apagar todos os dados</button>
+    </div>
+
+    <p style="text-align:center;font-size:11.5px;color:var(--tinta-fraca);margin-top:26px">
+      Florescer · feito com carinho</p>
+  `;
+
+  if (typeof renderSyncUI === 'function') renderSyncUI();
+};
+
+function freqTexto(m) {
+  if (m.frequencia === 'diaria') return 'todo dia';
+  if (!m.dias || !m.dias.length) return 'sem dia definido';
+  return (m.dias.length === 7 ? 'todo dia' : m.dias.map(d => DIAS_CURTOS[d]).join(', '));
+}
+
+function salvarPerfil(campo, valor) {
+  const p = perfil();
+  p[campo] = valor;
+  DB.set('perfil', p);
+  toast('Salvo');
+  if (campo === 'metaAgua' || campo === 'diasExercicio' || campo === 'horaExercicio') RENDER.ajustes();
+}
+
+function alternarDiaExercicio(d) {
+  const p = perfil();
+  const dias = p.diasExercicio || [];
+  const i = dias.indexOf(d);
+  if (i >= 0) dias.splice(i, 1); else dias.push(d);
+  dias.sort();
+  p.diasExercicio = dias;
+  DB.set('perfil', p);
+  RENDER.ajustes();
+}
+
+function novoTipoExercicio() {
+  abrirSheet(campoUnicoHTML('Novo tipo de treino', 'Ex.: Natação', ''), null);
+  document.getElementById('cu-form').onsubmit = e => {
+    e.preventDefault();
+    const v = document.getElementById('cu-input').value.trim();
+    if (!v) return;
+    const t = DB.get('exercicios') || [];
+    if (!t.includes(v)) { t.push(v); DB.set('exercicios', t); }
+    fecharSheet(); RENDER.ajustes();
+  };
+}
+
+function removerTipoExercicio(t) {
+  const tipos = (DB.get('exercicios') || []).filter(x => x !== t);
+  DB.set('exercicios', tipos);
+  RENDER.ajustes();
+}
+
+/** Sheet genérico de um campo só. */
+function campoUnicoHTML(titulo, placeholder, valor) {
+  return `
+    <div class="sheet-alca"></div>
+    <div class="sheet-cabeca">
+      <div><h2>${esc(titulo)}</h2></div>
+      <button class="sheet-x" onclick="fecharSheet()" aria-label="Fechar">✕</button>
+    </div>
+    <form id="cu-form">
+      <div class="sheet-corpo">
+        <div class="campo">
+          <input id="cu-input" type="text" placeholder="${esc(placeholder)}" value="${esc(valor)}" autocomplete="off">
+        </div>
+      </div>
+      <div class="sheet-pe"><button class="btn btn-cheio" type="submit">Salvar</button></div>
+    </form>`;
+}
+
+// ══ EDITOR DE REFEIÇÃO ═════════════════════════════════════════
+// Edições valem na hora (sem botão salvar) — menos passos, menos erro.
+
+let edRefId = null;
+
+function novaRefeicao() {
+  const d = dietaAtiva();
+  if (!d) return;
+  const r = { id: uid(), nome: 'Nova refeição', hora: '12:00', grupos: [] };
+  d.refeicoes.push(r);
+  salvarDietaAtiva(d);
+  editarRefeicao(r.id);
+}
+
+function editarRefeicao(refId) {
+  edRefId = refId;
+  abrirSheet('<div class="sheet-alca"></div><div id="ed-ref"></div>', () => RENDER.ajustes());
+  renderEditorRefeicao();
+}
+
+function refEditando() {
+  const d = dietaAtiva();
+  return d ? d.refeicoes.find(r => r.id === edRefId) : null;
+}
+
+function salvarDietaAtiva(dieta) {
+  const dietas = (DB.get('dietas') || []).map(d => (d.id === dieta.id ? dieta : d));
+  DB.set('dietas', dietas);
+}
+
+/** DB.get devolve uma cópia nova a cada chamada — então a refeição PRECISA vir
+ *  da mesma cópia da dieta que vai ser salva. Este helper garante isso. */
+function mexerNaRefeicao(fn, opts = {}) {
+  const dieta = dietaAtiva();
+  if (!dieta) return;
+  const r = dieta.refeicoes.find(x => x.id === edRefId);
+  if (!r) return;
+  if (fn(r, dieta) === false) return;
+  salvarDietaAtiva(dieta);
+  if (!opts.semRender) renderEditorRefeicao();
+}
+
+function renderEditorRefeicao() {
+  const r = refEditando();
+  const cx = document.getElementById('ed-ref');
+  if (!r || !cx) return;
+
+  cx.innerHTML = `
+    <div class="sheet-cabeca">
+      <div style="flex:1;min-width:0">
+        <h2>Refeição</h2>
+        <div class="dica">As mudanças já ficam salvas.</div>
+      </div>
+      <button class="sheet-x" onclick="fecharSheet()" aria-label="Fechar">✕</button>
+    </div>
+    <div class="sheet-corpo">
+      <div class="campo-dupla">
+        <div class="campo">
+          <label for="er-nome">Nome</label>
+          <input id="er-nome" type="text" value="${esc(r.nome)}" onchange="campoRefeicao('nome', this.value)">
+        </div>
+        <div class="campo">
+          <label for="er-hora">Horário</label>
+          <input id="er-hora" type="time" value="${esc(r.hora)}" onchange="campoRefeicao('hora', this.value)">
+        </div>
+      </div>
+
+      ${r.grupos.map((g, gi) => `
+        <div class="cartao" style="background:var(--bruma);box-shadow:none;padding:16px;margin-top:12px">
+          <div class="campo-dupla">
+            <div class="campo">
+              <label>Grupo</label>
+              <input type="text" value="${esc(g.nome)}" onchange="campoGrupo(${gi},'nome',this.value)">
+            </div>
+            <div class="campo">
+              <label>Quantidade</label>
+              <input type="number" inputmode="numeric" min="1" max="9" value="${g.qtd}"
+                     onchange="campoGrupo(${gi},'qtd',Math.max(1,Number(this.value)||1))">
+            </div>
+          </div>
+          <div class="campo" style="margin-bottom:10px">
+            <label>Opções que ela pode escolher</label>
+            <div class="chips" style="margin-bottom:9px">
+              ${g.opcoes.map((o, oi) => `<button class="chip" onclick="removerOpcao(${gi},${oi})">${esc(o.nome)} ✕</button>`).join('')}
+              ${g.opcoes.length ? '' : '<span style="font-size:13px;color:var(--tinta-fraca)">nenhuma ainda</span>'}
+            </div>
+            <form onsubmit="return novaOpcao(event, ${gi})">
+              <input type="text" placeholder="Escreva e aperte enter" autocomplete="off"
+                     style="min-height:44px;font-size:14.5px">
+            </form>
+          </div>
+          <button class="link-fraco" style="padding:6px" onclick="removerGrupo(${gi})">Remover grupo</button>
+        </div>`).join('')}
+
+      <button class="btn btn-vazio btn-sm" style="width:100%;margin-top:14px" onclick="novoGrupo()">${IC.mais} Grupo alimentar</button>
+      <button class="link-fraco" onclick="removerRefeicao()">Remover esta refeição do plano</button>
+    </div>
+    <div class="sheet-pe"><button class="btn btn-cheio" onclick="fecharSheet()">Concluído</button></div>`;
+}
+
+function campoRefeicao(campo, valor) {
+  mexerNaRefeicao(r => { r[campo] = valor; }, { semRender: true });
+}
+
+function campoGrupo(gi, campo, valor) {
+  mexerNaRefeicao(r => {
+    if (!r.grupos[gi]) return false;
+    r.grupos[gi][campo] = valor;
+    if (campo === 'qtd') r.grupos[gi].selecao = valor > 1 ? 'multipla' : 'unica';
+  });
+}
+
+function novoGrupo() {
+  mexerNaRefeicao(r => {
+    r.grupos.push({ id: uid(), nome: 'Novo grupo', qtd: 1, selecao: 'unica', opcoes: [] });
+  });
+}
+
+function removerGrupo(gi) {
+  const r0 = refEditando();
+  if (!r0 || !r0.grupos[gi]) return;
+  confirmar('Remover grupo', `"${r0.grupos[gi].nome}" sai desta refeição. O histórico já registrado continua intacto.`, 'Remover',
+    () => mexerNaRefeicao(r => { r.grupos.splice(gi, 1); }));
+}
+
+/** Enter no campo inline adiciona a opção e mantém o foco pra digitar a próxima. */
+function novaOpcao(e, gi) {
+  e.preventDefault();
+  const v = e.target.querySelector('input').value.trim();
+  if (!v) return false;
+  mexerNaRefeicao(r => {
+    if (!r.grupos[gi]) return false;
+    r.grupos[gi].opcoes.push({ id: uid(), nome: v });
+  });
+  const campo = document.querySelectorAll('#ed-ref form input')[gi];
+  if (campo) campo.focus();
+  return false;
+}
+
+function removerOpcao(gi, oi) {
+  mexerNaRefeicao(r => { if (r.grupos[gi]) r.grupos[gi].opcoes.splice(oi, 1); });
+}
+
+function removerRefeicao() {
+  const r0 = refEditando();
+  if (!r0) return;
+  confirmar('Remover refeição', `"${r0.nome}" sai do plano. Os dias já registrados continuam no histórico.`, 'Remover', () => {
+    const dieta = dietaAtiva();
+    dieta.refeicoes = dieta.refeicoes.filter(x => x.id !== edRefId);
+    salvarDietaAtiva(dieta);
+    fecharSheet();
+  });
+}
+
+// ── Versionamento do plano ───────────────────────────────────────
+function novaVersaoDieta() {
+  const atual = dietaAtiva();
+  if (!atual) return;
+  confirmar(
+    'Nova versão do plano',
+    'Cria uma cópia editável e arquiva a atual. Nada é apagado — o histórico continua ligado ao plano de cada época.',
+    'Criar versão',
+    () => {
+      const dietas = DB.get('dietas') || [];
+      dietas.forEach(d => { d.ativa = false; });
+      const nova = JSON.parse(JSON.stringify(atual));
+      nova.id = uid();
+      nova.nome = `Plano ${dietas.length + 1}`;
+      nova.criadaEm = hoje();
+      nova.ativa = true;
+      dietas.push(nova);
+      DB.set('dietas', dietas);
+      toast('Nova versão criada');
+      RENDER.ajustes();
+    });
+}
+
+function ativarDieta(id) {
+  const dietas = DB.get('dietas') || [];
+  dietas.forEach(d => { d.ativa = d.id === id; });
+  DB.set('dietas', dietas);
+  toast('Plano reativado');
+  RENDER.ajustes();
+}
+
+// ══ MEDICAMENTOS ═══════════════════════════════════════════════
+
+let edMedId = null;
+let edMedDias = [];
+
+function editarMedicamento(id) {
+  const meds = DB.get('medicamentos') || [];
+  const m = id ? meds.find(x => x.id === id) : null;
+  edMedId = id || null;
+  edMedDias = m ? [...(m.dias || [])] : [];
+
+  abrirSheet(`
+    <div class="sheet-alca"></div>
+    <div class="sheet-cabeca">
+      <div><h2>${m ? 'Editar' : 'Novo'} medicamento</h2></div>
+      <button class="sheet-x" onclick="fecharSheet()" aria-label="Fechar">✕</button>
+    </div>
+    <form id="med-form">
+      <div class="sheet-corpo">
+        <div class="campo">
+          <label for="md-nome">Nome</label>
+          <input id="md-nome" type="text" required value="${esc(m?.nome || '')}" placeholder="Ex.: Vitamina D">
+        </div>
+        <div class="campo-dupla">
+          <div class="campo">
+            <label for="md-dose">Dose</label>
+            <input id="md-dose" type="text" value="${esc(m?.dose || '')}" placeholder="1 cápsula">
+          </div>
+          <div class="campo">
+            <label for="md-hora">Horário</label>
+            <input id="md-hora" type="time" required value="${esc(m?.hora || '08:00')}">
+          </div>
+        </div>
+        <div class="campo">
+          <label for="md-freq">Frequência</label>
+          <select id="md-freq" onchange="document.getElementById('md-dias').style.display = this.value === 'diaria' ? 'none' : 'block'">
+            <option value="diaria"  ${m?.frequencia === 'diaria'  || !m ? 'selected' : ''}>Todo dia</option>
+            <option value="semanal" ${m?.frequencia === 'semanal' ? 'selected' : ''}>Uma vez por semana</option>
+            <option value="dias"    ${m?.frequencia === 'dias'    ? 'selected' : ''}>Em dias específicos</option>
+          </select>
+        </div>
+        <div class="campo" id="md-dias" style="display:${m && m.frequencia !== 'diaria' ? 'block' : 'none'}">
+          <label>Em quais dias</label>
+          <div class="toggles" id="md-dias-t">
+            ${DIAS_LETRA.map((l, k) => `<button type="button" class="toggle ${edMedDias.includes(k) ? 'on' : ''}"
+              onclick="alternarDiaMed(${k}, this)" aria-label="${DIAS_CURTOS[k]}">${l}</button>`).join('')}
+          </div>
+        </div>
+        <div class="campo">
+          <label for="md-obs">Observações</label>
+          <textarea id="md-obs" placeholder="Como tomar, cuidados...">${esc(m?.obs || '')}</textarea>
+        </div>
+        ${m ? `<div class="campo" style="margin-bottom:0">
+          <label>Situação</label>
+          <div class="toggles">
+            <button type="button" class="toggle ${m.ativo ? 'on' : ''}" onclick="alternarAtivoMed(this)" id="md-ativo"
+              data-on="${m.ativo}">${m.ativo ? 'Em uso' : 'Pausado'}</button>
+          </div></div>` : ''}
+      </div>
+      <div class="sheet-pe">
+        <button class="btn btn-cheio" type="submit">Salvar</button>
+        ${m ? `<button type="button" class="link-fraco" onclick="removerMedicamento('${esc(m.id)}')">Remover medicamento</button>` : ''}
+      </div>
+    </form>`, () => RENDER.ajustes());
+
+  document.getElementById('med-form').onsubmit = e => { e.preventDefault(); salvarMedicamento(); };
+}
+
+function alternarDiaMed(d, btn) {
+  const i = edMedDias.indexOf(d);
+  if (i >= 0) edMedDias.splice(i, 1); else edMedDias.push(d);
+  edMedDias.sort();
+  btn.classList.toggle('on');
+}
+
+function alternarAtivoMed(btn) {
+  const on = btn.dataset.on !== 'true';
+  btn.dataset.on = on;
+  btn.classList.toggle('on', on);
+  btn.textContent = on ? 'Em uso' : 'Pausado';
+}
+
+function salvarMedicamento() {
+  const freq = document.getElementById('md-freq').value;
+  const ativoBtn = document.getElementById('md-ativo');
+  const reg = {
+    id: edMedId || uid(),
+    nome: document.getElementById('md-nome').value.trim(),
+    dose: document.getElementById('md-dose').value.trim(),
+    hora: document.getElementById('md-hora').value,
+    frequencia: freq,
+    dias: freq === 'diaria' ? [] : edMedDias,
+    obs: document.getElementById('md-obs').value.trim(),
+    ativo: ativoBtn ? ativoBtn.dataset.on === 'true' : true,
+  };
+  if (!reg.nome) return toast('Dê um nome ao medicamento');
+  if (freq !== 'diaria' && !reg.dias.length) return toast('Escolha pelo menos um dia');
+
+  const meds = DB.get('medicamentos') || [];
+  const i = meds.findIndex(x => x.id === reg.id);
+  if (i >= 0) meds[i] = reg; else meds.push(reg);
+  DB.set('medicamentos', meds);
+  fecharSheet();
+  toast('Salvo');
+}
+
+function removerMedicamento(id) {
+  confirmar('Remover medicamento', 'Ele sai do dia a dia. O histórico do que já foi tomado continua.', 'Remover', () => {
+    DB.set('medicamentos', (DB.get('medicamentos') || []).filter(m => m.id !== id));
+    fecharSheet();
+  });
+}
+
+// ══ BACKUP ═════════════════════════════════════════════════════
+
+function baixarBackup() {
+  const dados = { _app: 'florescer', _versao: 1, _em: new Date().toISOString() };
+  CHAVES_DADOS.forEach(k => { dados[k] = DB.get(k); });
+  const blob = new Blob([JSON.stringify(dados, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `florescer-backup-${hoje()}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  try { localStorage.setItem('lo_ultimo_backup', String(Date.now())); } catch {}
+  toast('Backup baixado');
+  if (typeof renderSyncUI === 'function') renderSyncUI();
+}
+
+function restaurarBackup(input) {
+  const arq = input.files && input.files[0];
+  if (!arq) return;
+  const leitor = new FileReader();
+  leitor.onload = () => {
+    let dados;
+    try { dados = JSON.parse(leitor.result); } catch { return toast('Arquivo inválido'); }
+    if (dados._app !== 'florescer') return toast('Este backup não é do Florescer');
+    confirmar('Restaurar backup', `Substitui os dados atuais pelos do arquivo de ${fmt.data((dados._em || '').slice(0, 10))}.`, 'Restaurar', () => {
+      CHAVES_DADOS.forEach(k => { if (dados[k] !== undefined && dados[k] !== null) DB.set(k, dados[k]); });
+      toast('Backup restaurado');
+      location.reload();
+    });
+  };
+  leitor.readAsText(arq);
+  input.value = '';
+}
+
+function apagarTudo() {
+  confirmar('Apagar todos os dados', 'Some tudo deste aparelho: plano, registros, pesos e sessões. Não dá para desfazer.', 'Apagar tudo', () => {
+    Object.keys(localStorage).filter(k => k.startsWith('lo_')).forEach(k => localStorage.removeItem(k));
+    location.reload();
+  }, { perigo: true });
+}

@@ -1,0 +1,17 @@
+{
+  "name": "Florescer",
+  "short_name": "Florescer",
+  "description": "Companheiro diário do tratamento: plano alimentar, água, vitaminas, treino e sessões.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#FDFBFC",
+  "theme_color": "#FDFBFC",
+  "lang": "pt-BR",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
