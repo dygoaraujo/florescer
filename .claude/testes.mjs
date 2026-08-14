@@ -993,9 +993,10 @@ console.log('\n── A extra entra na sequência, não no relógio ─');
 console.log('\n── Carimbo à esquerda, quantidade à direita ──');
 {
   const ctx = novoSandbox();
-  eq('a coluna da hora existe mesmo vazia (nomes alinhados)', run(ctx, `
+  // Sem registro, nada de espaço sobrando: o item fica encostado no fio
+  eq('pendente não abre espaço de horário', run(ctx, `
     (noHTML(itensDoDia(hoje()).find(i => i.tipo === 'refeicao'), false).match(/no-hora/g) || []).length;
-  `), 1);
+  `), 0);
 
   run(ctx, `
     abrirJejum(); definirJejum(400); confirmarJejum();
@@ -1015,6 +1016,45 @@ console.log('\n── Carimbo à esquerda, quantidade à direita ──');
     const r = itensDoDia(hoje()).find(x => x.tipo === 'refeicao');
     [horaVisivel(r), detalheItem(r)];
   `), ['', '']);
+  eq('registrado ganha o carimbo à esquerda', run(ctx, `
+    (noHTML(itensDoDia(hoje()).find(i => i.tipo === 'jejum'), false).match(/no-hora/g) || []).length;
+  `), 1);
+}
+
+console.log('\n── Correção de rótulo (queijo branco) ──────');
+{
+  const ctx = novoSandbox();
+  const prot = () => run(ctx, `
+    dietaAtiva().refeicoes[0].grupos.find(g => g.id === 'g-cafe-prot').opcoes.map(o => [o.id, o.nome]);
+  `);
+  eq('instalação nova já vem com queijo branco', prot(),
+     [['o-ovo', 'Ovo'], ['o-queijo-branco', 'Queijo branco'], ['o-requeijao-light', 'Requeijão light']]);
+
+  // Quem já tinha o app aberto com o nome antigo é corrigido NO LUGAR:
+  // não é plano novo, é a mesma comida escrita melhor.
+  run(ctx, `
+    const d = DB.get('dietas');
+    const g = d[0].refeicoes[0].grupos.find(x => x.id === 'g-cafe-prot');
+    g.opcoes[1] = { id: 'o-queijo-minas-frescal', nome: 'Queijo minas frescal', medida: med(20, 'g') };
+    DB.set('dietas', d);
+    corrigirNomes();
+  `);
+  eq('o nome antigo é trocado sem criar versão nova', prot(),
+     [['o-ovo', 'Ovo'], ['o-queijo-branco', 'Queijo branco'], ['o-requeijao-light', 'Requeijão light']]);
+  eq('e continua tendo uma dieta só', run(ctx, "DB.get('dietas').length"), 1);
+  eq('a medida da clínica não se perde no caminho', run(ctx, `
+    medidaTexto(dietaAtiva().refeicoes[0].grupos.find(g => g.id === 'g-cafe-prot').opcoes[1].medida);
+  `), '20 g');
+
+  // Roda a cada abertura do app: não pode ficar carimbando edição à toa
+  eq('rodar de novo não marca edição no sync', run(ctx, `
+    let gravou = false;
+    const original = DB.set;
+    DB.set = (k, v) => { if (k === 'dietas') gravou = true; return original(k, v); };
+    corrigirNomes();
+    DB.set = original;
+    gravou;
+  `), false);
 }
 
 console.log(`\n${falhou ? '✗' : '✓'} ${ok} passaram, ${falhou} falharam\n`);

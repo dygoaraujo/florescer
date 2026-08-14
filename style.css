@@ -322,11 +322,10 @@ input, select, textarea { font-size: 16px; }   /* < 16px faz o iOS dar zoom no f
   transition: background .2s ease;
 }
 .no-linha:active { background: var(--bruma); }
-/* Coluna da esquerda: o horário em que ela REGISTROU. Nasce vazia e vai
-   preenchendo conforme o dia acontece — o espaço fica reservado de qualquer
-   jeito, senão os nomes dançavam de linha pra linha. */
+/* O horário em que ela REGISTROU, à esquerda do ícone. Não existe enquanto
+   não houver registro — o que ainda está por fazer fica encostado no fio, e a
+   linha só se afasta quando ganha o carimbo. */
 .no-hora {
-  width: 38px;
   flex-shrink: 0;
   font-size: 12px;
   font-variant-numeric: tabular-nums;

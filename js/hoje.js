@@ -224,10 +224,11 @@ function noHTML(i, ativo) {
               : i.estado === 'pulado' ? '<span style="font-size:13px">—</span>'
               : '';
   const det = detalheItem(i);
+  const hora = horaVisivel(i);
   return `
     <div class="${cls}">
       <button class="no-linha" onclick="abrirItem('${i.tipo}','${esc(i.id)}')">
-        <span class="no-hora num">${esc(horaVisivel(i))}</span>
+        ${hora ? `<span class="no-hora num">${esc(hora)}</span>` : ''}
         <span class="no-cat">${iconeItem(i)}</span>
         <span class="no-nome">${esc(i.nome)}</span>
         ${det ? `<span class="no-det">${esc(det)}</span>` : ''}

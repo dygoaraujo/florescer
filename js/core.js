@@ -256,7 +256,7 @@ const SEED = {
           dependeDe: { grupoId: 'g-cafe-bebida', opcaoId: idDe('Chá') },
           opcoes: opcoesPorSecao(CATALOGO.chas, med(1, 'xc')) },
         { id: 'g-cafe-prot', bloco: 'Para comer', nome: 'Proteína', qtd: 1, selecao: 'unica',
-          opcoes: opcoes([['Ovo', med(1, 'un')], ['Queijo minas frescal', med(20, 'g')],
+          opcoes: opcoes([['Ovo', med(1, 'un')], ['Queijo branco', med(20, 'g')],
                           ['Requeijão light', med(1, 'col sopa')]]) },
         { id: 'g-cafe-carbo', bloco: 'Para comer', nome: 'Carboidrato ou fruta', qtd: 1, selecao: 'unica',
           opcoes: opcoes([['Pão de forma 100% integral', med(1, 'fatia')], ['Torrada', med(1, 'un')]], null, 'Pães e torradas')
@@ -366,6 +366,33 @@ function iniciarDB() {
   if (mudou) DB.set('perfil', p);
 
   migrarSeed();
+  corrigirNomes();
+}
+
+/** Correção de RÓTULO: o alimento é o mesmo, só estava escrito de um jeito
+ *  ruim. Não é caso de nova versão da dieta (a clínica não mudou nada), então
+ *  roda direto sobre os planos que já existem, incluindo os arquivados.
+ *  É idempotente e só grava se achou algo — senão carimbaria edição no sync
+ *  a cada abertura do app. */
+const CORRECOES_DE_NOME = [
+  { de: 'o-queijo-minas-frescal', id: 'o-queijo-branco', nome: 'Queijo branco' },
+];
+
+function corrigirNomes() {
+  const dietas = DB.get('dietas') || [];
+  let mudou = false;
+
+  dietas.forEach(d => (d.refeicoes || []).forEach(r => (r.grupos || []).forEach(g => {
+    (g.opcoes || []).forEach(o => {
+      const c = CORRECOES_DE_NOME.find(x => x.de === o.id);
+      if (!c) return;
+      o.id = c.id;
+      o.nome = c.nome;
+      mudou = true;
+    });
+  })));
+
+  if (mudou) DB.set('dietas', dietas);
 }
 
 /** Leva o plano novo pra quem já tinha o app aberto.
