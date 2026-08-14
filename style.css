@@ -743,6 +743,18 @@ input, select, textarea { font-size: 16px; }   /* < 16px faz o iOS dar zoom no f
   color: var(--tinta);
 }
 
+/* Alimento sem porção fixa (whey): os valores mais comuns, num toque */
+.sugestoes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  margin: -4px 0 12px;
+  padding-left: 2px;
+}
+.sugestoes-lbl { font-size: 12px; color: var(--tinta-dim); }
+.chip-sug { min-height: 38px; padding: 0 13px; font-size: 13.5px; }
+
 .trocar {
   font-size: 13px;
   font-weight: 600;

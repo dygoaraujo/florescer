@@ -672,12 +672,12 @@ function itensDoLog(escolha) {
   return (escolha.opcaoIds || []).map(id => ({ opcaoId: id, nome: '', medida: null }));
 }
 
-// `min` = quantos ela PRECISA marcar (é o que decide se a refeição ficou
-// completa). `qtd` = o teto de quantos cabem. Quando os dois são iguais, o
-// grupo é exato ("1 de 1"); quando min < qtd, é "à vontade a partir de min".
+// `min` = quantos ela PRECISA marcar pra refeição contar como completa.
+// NÃO existe teto: se ela comeu duas proteínas, o app tem que deixar registrar
+// as duas — travar a lista faria o registro mentir sobre o prato. O `qtd` do
+// plano sobrou só como valor padrão do mínimo em grupo antigo.
 const minDoGrupo = g => (g.min != null ? g.min : g.qtd);
 function grupoCompleto(g) { return (sel[g.id] || []).length >= minDoGrupo(g); }
-const grupoCheio  = g => (sel[g.id] || []).length >= g.qtd;
 
 /** Um grupo pode depender de uma escolha anterior (a lista de chás só existe
  *  se ela marcou "Chá"). Grupo inativo não aparece nem entra na completude. */
@@ -773,10 +773,10 @@ function irParaGrupoQueFalta() {
 function grupoHTML(g, gi) {
   const escolhidos = sel[g.id] || [];
   const completo = grupoCompleto(g);
-  const cheio = grupoCheio(g);
   const min = minDoGrupo(g);
-  // Só recolhe quando não cabe mais nada — se ainda dá pra incluir, ela vê.
-  const recolhido = cheio && !gruposAbertos.has(g.id);
+  // Recolhe quando o mínimo é atingido, pra tirar 40 opções da frente. Não é
+  // trava: o botão embaixo reabre e ela põe quantos quiser.
+  const recolhido = completo && !gruposAbertos.has(g.id);
   const busca = (buscaGrupo[g.id] || '').trim().toLowerCase();
 
   const visiveis = busca
@@ -787,14 +787,15 @@ function grupoHTML(g, gi) {
     <div class="grupo ${completo ? 'completo' : ''}" id="grupo-${esc(g.id)}">
       <div class="grupo-topo">
         <span class="grupo-nome">${esc(g.nome)}</span>
-        <span class="grupo-cont num">${escolhidos.length} de ${min}${completo ? ' ✓' : ''}${
-          !completo && g.qtd > min ? ` · até ${g.qtd}` : ''}</span>
+        <span class="grupo-cont num">${completo ? `${escolhidos.length} ✓` : `${escolhidos.length} de ${min}`}</span>
       </div>
       ${g.obs && !recolhido ? `<p class="grupo-obs">${esc(g.obs)}</p>` : ''}
 
       ${escolhidos.map((it, i) => {
         const passo = passoDe(it.medida?.unidade);
         const livre = it.medida?.valor == null;
+        // Alimento sem porção fixa (whey) traz os valores mais comuns num toque
+        const sug = (g.opcoes.find(o => o.id === it.opcaoId) || {}).sugestoes || [];
         return `
         <div class="escolhido">
           <span class="esc-nome">${esc(it.nome || nomeOpcao(g, it.opcaoId))}</span>
@@ -806,28 +807,32 @@ function grupoHTML(g, gi) {
                  <button onclick="mudarMedida('${esc(g.id)}',${i},${passo})" aria-label="Aumentar">+</button>
                </div>`}
           <button class="esc-x" onclick="tirarEscolha('${esc(g.id)}',${i})" aria-label="Tirar">✕</button>
-        </div>`;
+        </div>
+        ${sug.length ? `<div class="sugestoes">
+          <span class="sugestoes-lbl">Quantos ${esc(it.medida?.unidade || '')}?</span>
+          ${sug.map(v => `<button class="chip chip-sug ${Number(it.medida?.valor) === v ? 'on' : ''}"
+            onclick="definirMedida('${esc(g.id)}',${i},${v})">${v}</button>`).join('')}
+        </div>` : ''}`;
       }).join('')}
 
       ${recolhido
-        ? `<button class="trocar" onclick="abrirGrupo('${esc(g.id)}')">Trocar</button>`
+        ? `<button class="trocar" onclick="abrirGrupo('${esc(g.id)}')">Trocar ou adicionar</button>`
         : `
           ${g.opcoes.length > LIMITE_BUSCA ? `
             <input class="busca-grupo" type="search" inputmode="search" placeholder="Buscar em ${g.opcoes.length} opções"
                    value="${esc(buscaGrupo[g.id] || '')}" oninput="filtrarGrupo('${esc(g.id)}', this.value)">` : ''}
           ${visiveis.length === 0
             ? '<span class="sem-achado">Nada com esse nome neste grupo.</span>'
-            : chipsHTML(g, visiveis, escolhidos, cheio)}`}
+            : chipsHTML(g, visiveis, escolhidos)}`}
     </div>`;
 }
 
 /** Chips agrupados pelos subgrupos do papel da clínica (Termogênicos,
  *  Diuréticos, Bovina, Peixes…). Sem seção, cai numa grade única. */
-function chipsHTML(g, lista, escolhidos, cheio) {
+function chipsHTML(g, lista, escolhidos) {
   const chip = o => {
     const on = escolhidos.some(it => it.opcaoId === o.id);
-    const travado = !on && cheio;
-    return `<button class="chip ${on ? 'on' : ''} ${travado ? 'travado' : ''}"
+    return `<button class="chip ${on ? 'on' : ''}"
               onclick="escolher('${esc(g.id)}','${esc(o.id)}')" aria-pressed="${on}">
               ${esc(o.nome)}${o.medida && o.medida.valor != null ? `<i class="chip-med">${esc(medidaTexto(o.medida))}</i>` : ''}
             </button>`;
@@ -892,27 +897,28 @@ function escolher(grupoId, opcaoId) {
   const o = g.opcoes.find(x => x.id === opcaoId);
   const atual = sel[grupoId] || [];
   const i = atual.findIndex(it => it.opcaoId === opcaoId);
-  const novo = () => ({ opcaoId, nome: o.nome, medida: o.medida ? { ...o.medida } : null });
+  const eraCompleto = grupoCompleto(g);
 
-  if (i >= 0) {
-    atual.splice(i, 1);
-    gruposAbertos.add(grupoId);              // desmarcar mantém a lista aberta
-  } else if (g.selecao === 'unica' && g.qtd === 1) {
-    sel[grupoId] = [novo()];                 // troca direta, sem desmarcar antes
-    gruposAbertos.delete(grupoId);
-    limparGruposInativos();
-    renderGrupos();
-    return renderPeRefeicao();
-  } else if (atual.length < g.qtd) {
-    atual.push(novo());
-    if (atual.length >= g.qtd) gruposAbertos.delete(grupoId);   // encheu: recolhe
-  } else {
-    return;                                   // grupo cheio: ignora o toque
-  }
+  if (i >= 0) atual.splice(i, 1);
+  else atual.push({ opcaoId, nome: o.nome, medida: o.medida ? { ...o.medida } : null });
   sel[grupoId] = atual;
+
+  // Recolhe só na PRIMEIRA vez que o grupo fecha o mínimo. Se ela reabriu pra
+  // somar um terceiro vegetal, recolher a cada toque seria uma briga.
+  if (!eraCompleto && grupoCompleto(g)) gruposAbertos.delete(grupoId);
+  else gruposAbertos.add(grupoId);
+
   limparGruposInativos();
   renderGrupos();
   renderPeRefeicao();
+}
+
+/** Valor sugerido de um toque (os gramas do whey). */
+function definirMedida(grupoId, i, valor) {
+  const it = (sel[grupoId] || [])[i];
+  if (!it || !it.medida) return;
+  it.medida.valor = valor;
+  renderGrupos();
 }
 
 function tirarEscolha(grupoId, i) {
@@ -985,7 +991,6 @@ function repetirUltima() {
     sel[g.id] = e
       ? itensDoLog(e)
           .filter(it => g.opcoes.some(o => o.id === it.opcaoId))
-          .slice(0, g.qtd)
           .map(it => ({ opcaoId: it.opcaoId, nome: it.nome || nomeOpcao(g, it.opcaoId), medida: it.medida ? { ...it.medida } : null }))
       : [];
     if (grupoCompleto(g)) gruposAbertos.delete(g.id);

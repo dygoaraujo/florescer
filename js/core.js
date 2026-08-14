@@ -115,10 +115,14 @@ const idDe = nome => 'o-' + nome.toLowerCase()
   .normalize('NFD').replace(/\p{Diacritic}/gu, '')
   .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
+// Um item pode vir como 'Nome', ['Nome', medida] ou ['Nome', medida, {extras}].
+// `extras` carrega coisas soltas da opção — hoje só `sugestoes`, os valores de
+// um toque pra quem não tem porção fixa (ver o whey).
 const opcoes = (lista, medidaPadrao, secao) => lista.map(item => {
-  const [nome, medida] = Array.isArray(item) ? item : [item, medidaPadrao];
+  const [nome, medida, extras] = Array.isArray(item) ? item : [item, medidaPadrao];
   const o = { id: idDe(nome), nome, medida: medida || medidaPadrao || null };
   if (secao) o.secao = secao;
+  if (extras) Object.assign(o, extras);
   return o;
 });
 
@@ -131,7 +135,7 @@ const opcoesPorSecao = (blocos, medidaPadrao) =>
 const CATALOGO = {
   // Grupo A — à vontade
   grupoA: ['Abóbora', 'Abobrinha', 'Acelga', 'Agrião', 'Aipo', 'Alcachofra', 'Alface', 'Almeirão',
-    'Aspargo', 'Berinjela', 'Brócolis', 'Caxi', 'Chicória', 'Chuchu', 'Couve', 'Escarola', 'Espinafre',
+    'Aspargo', 'Berinjela', 'Brócolis', 'Caxi', 'Chicória', 'Chuchu', 'Couve', 'Couve-flor', 'Escarola', 'Espinafre',
     'Folhas da beterraba', 'Guariroba', 'Jiló', 'Maxixe', 'Moranga', 'Nabo', 'Palmito', 'Pepino',
     'Pimentão', 'Quiabo', 'Rabanete', 'Repolho', 'Rúcula', 'Tomate', 'Tomate-cereja', 'Vagem'],
 
@@ -150,6 +154,9 @@ const CATALOGO = {
     { secao: 'Ovos',          itens: [['Ovo de galinha', med(2, 'un')], ['Ovo de codorna', med(10, 'un')]] },
     { secao: 'Vegetal',       itens: ['Cogumelos', 'Edamame', 'Ervilha', 'Feijão', 'Grão-de-bico', 'Lentilha', 'Soja',
                                       'Proteína texturizada de soja'] },
+    // A dose do whey muda de marca pra marca (o scoop vai de 20 a 40 g), então
+    // ele não tem porção "da clínica": ela informa quantos gramas na hora.
+    { secao: 'Suplemento',    itens: [['Whey protein', med(30, 'g'), { sugestoes: [20, 25, 30, 40] }]] },
   ],
 
   // Frutas — cada uma com a porção da clínica
@@ -257,7 +264,9 @@ const SEED = {
           opcoes: opcoesPorSecao(CATALOGO.chas, med(1, 'xc')) },
         { id: 'g-cafe-prot', bloco: 'Para comer', nome: 'Proteína', qtd: 1, selecao: 'unica',
           opcoes: opcoes([['Ovo', med(1, 'un')], ['Queijo branco', med(20, 'g')],
-                          ['Requeijão light', med(1, 'col sopa')]]) },
+                          ['Requeijão light', med(1, 'col sopa')],
+                          ['Iogurte desnatado', med(1, 'pote')],
+                          ['Whey protein', med(30, 'g'), { sugestoes: [20, 25, 30, 40] }]]) },
         { id: 'g-cafe-carbo', bloco: 'Para comer', nome: 'Carboidrato ou fruta', qtd: 1, selecao: 'unica',
           opcoes: opcoes([['Pão de forma 100% integral', med(1, 'fatia')], ['Torrada', med(1, 'un')]], null, 'Pães e torradas')
                   .concat(opcoesPorSecao(CATALOGO.frutas)) },
@@ -366,19 +375,31 @@ function iniciarDB() {
   if (mudou) DB.set('perfil', p);
 
   migrarSeed();
-  corrigirNomes();
+  corrigirPlano();
 }
 
-/** Correção de RÓTULO: o alimento é o mesmo, só estava escrito de um jeito
- *  ruim. Não é caso de nova versão da dieta (a clínica não mudou nada), então
- *  roda direto sobre os planos que já existem, incluindo os arquivados.
- *  É idempotente e só grava se achou algo — senão carimbaria edição no sync
- *  a cada abertura do app. */
+/* ── Manutenção do plano sem forçar versão nova ────────────────────
+   Subir SEED_VERSAO arquiva o plano e cria outro — certo quando a clínica
+   MUDA o plano, exagero quando é só um nome mal escrito ou um alimento novo
+   na lista. Estas duas passadas resolvem esses casos no lugar. Rodam a cada
+   abertura, são idempotentes e só gravam se acharam algo — senão carimbariam
+   edição no sync toda vez que ela abrisse o app.                          */
+
+/** RÓTULO: mesma comida, escrita melhor. Vale até nos planos arquivados. */
 const CORRECOES_DE_NOME = [
   { de: 'o-queijo-minas-frescal', id: 'o-queijo-branco', nome: 'Queijo branco' },
 ];
 
-function corrigirNomes() {
+/** ALIMENTO NOVO numa lista que já existe. Só no plano ativo: um plano
+ *  arquivado é registro do que valia na época e não se reescreve. */
+const OPCOES_ADICIONADAS = [
+  { grupos: ['g-al-a', 'g-ja-a'],       opcoes: opcoes(['Couve-flor'], med(null, 'à vontade')) },
+  { grupos: ['g-al-prot', 'g-ja-prot'], opcoes: opcoes([['Whey protein', med(30, 'g'), { sugestoes: [20, 25, 30, 40] }]], null, 'Suplemento') },
+  { grupos: ['g-cafe-prot'],            opcoes: opcoes([['Iogurte desnatado', med(1, 'pote')],
+                                                        ['Whey protein', med(30, 'g'), { sugestoes: [20, 25, 30, 40] }]]) },
+];
+
+function corrigirPlano() {
   const dietas = DB.get('dietas') || [];
   let mudou = false;
 
@@ -389,6 +410,16 @@ function corrigirNomes() {
       o.id = c.id;
       o.nome = c.nome;
       mudou = true;
+    });
+
+    if (!d.ativa) return;
+    OPCOES_ADICIONADAS.forEach(a => {
+      if (!a.grupos.includes(g.id)) return;
+      a.opcoes.forEach(nova => {
+        if ((g.opcoes || []).some(o => o.id === nova.id)) return;   // guarda anti-duplicata
+        g.opcoes.push(JSON.parse(JSON.stringify(nova)));
+        mudou = true;
+      });
     });
   })));
 

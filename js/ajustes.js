@@ -320,9 +320,9 @@ function renderEditorRefeicao() {
               <input type="text" value="${esc(g.nome)}" onchange="campoGrupo(${gi},'nome',this.value)">
             </div>
             <div class="campo">
-              <label>Quantidade</label>
-              <input type="number" inputmode="numeric" min="1" max="9" value="${g.qtd}"
-                     onchange="campoGrupo(${gi},'qtd',Math.max(1,Number(this.value)||1))">
+              <label>Mínimo</label>
+              <input type="number" inputmode="numeric" min="1" max="9" value="${g.min != null ? g.min : g.qtd}"
+                     onchange="campoGrupo(${gi},'min',Math.max(1,Number(this.value)||1))">
             </div>
           </div>
           <div class="campo" style="margin-bottom:10px">
@@ -357,7 +357,6 @@ function campoGrupo(gi, campo, valor) {
   mexerNaRefeicao(r => {
     if (!r.grupos[gi]) return false;
     r.grupos[gi][campo] = valor;
-    if (campo === 'qtd') r.grupos[gi].selecao = valor > 1 ? 'multipla' : 'unica';
   });
 }
 

@@ -235,7 +235,8 @@ function comidaPlanoHTML() {
           <div style="margin-bottom:13px">
             <div class="grupo-topo" style="margin-bottom:7px">
               <span class="rotulo" style="color:var(--tinta-dim)">${esc(g.nome)}</span>
-              <span class="grupo-cont num">escolher ${g.qtd}</span>
+              <span class="grupo-cont num">${(g.min != null ? g.min : g.qtd) > 1
+                ? `pelo menos ${g.min != null ? g.min : g.qtd}` : 'escolher 1 ou mais'}</span>
             </div>
             <div style="font-size:14px;color:var(--tinta-dim);line-height:1.6">${esc(g.opcoes.map(o => o.nome).join(' · ')) || '—'}</div>
           </div>`).join('') || '<div style="color:var(--tinta-fraca);font-size:13.5px">sem grupos</div>'}

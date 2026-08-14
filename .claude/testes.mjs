@@ -472,10 +472,14 @@ console.log('\n── Mínimo, teto e itens obrigatórios ───────'
   eq('mas ainda cabe mais', run(ctx, `
     escolher('${gA.id}', '${gA.opcoes[2].id}'); sel['${gA.id}'].length;
   `), 3);
-  eq('até o teto de 6', run(ctx, `
+  // Sem teto: ela monta o prato dela, o app não discute a quantidade
+  eq('sem teto — aceita quantos ela marcar', run(ctx, `
     [3,4,5,6,7].forEach(k => escolher('${gA.id}', dietaAtiva().refeicoes[2].grupos[0].opcoes[k].id));
     sel['${gA.id}'].length;
-  `), 6);
+  `), 8);
+  eq('e nenhum chip fica travado', run(ctx, `
+    grupoHTML(dietaAtiva().refeicoes[2].grupos[0]).includes('travado');
+  `), false);
 
   // Faltar um item obrigatório derruba a refeição pra incompleta
   run(ctx, `
@@ -600,8 +604,17 @@ console.log('\n── Grupo condicional (chá x café) ────────�
   run(ctx, "escolher('g-cafe-cha', idDe('Camomila'));");
   eq('marcou camomila', run(ctx, "sel['g-cafe-cha'].map(i => i.nome)"), ['Camomila']);
 
+  // Sem teto, tomar os dois é um registro válido — e o chá continua marcado,
+  // então a lista de chás segue de pé.
   run(ctx, "escolher('g-cafe-bebida', idDe('Café'));");
-  eq('trocou pra café: a lista some', run(ctx, `
+  eq('tomou os dois: os dois ficam marcados',
+     run(ctx, "sel['g-cafe-bebida'].map(i => i.nome)"), ['Chá', 'Café']);
+  eq('e a lista de chás continua, porque o chá continua',
+     run(ctx, "gruposAtivos().some(g => g.id === 'g-cafe-cha')"), true);
+
+  // Desmarcando o chá é que a lista some — e leva a camomila junto
+  run(ctx, "escolher('g-cafe-bebida', idDe('Chá'));");
+  eq('tirou o chá: a lista some', run(ctx, `
     gruposAtivos().some(g => g.id === 'g-cafe-cha');
   `), false);
   eq('e a camomila não fica de fantasma', run(ctx, "sel['g-cafe-cha'].length"), 0);
@@ -1079,20 +1092,28 @@ console.log('\n── Correção de rótulo (queijo branco) ──────')
   const prot = () => run(ctx, `
     dietaAtiva().refeicoes[0].grupos.find(g => g.id === 'g-cafe-prot').opcoes.map(o => [o.id, o.nome]);
   `);
-  eq('instalação nova já vem com queijo branco', prot(),
-     [['o-ovo', 'Ovo'], ['o-queijo-branco', 'Queijo branco'], ['o-requeijao-light', 'Requeijão light']]);
+  const NOVA = [['o-ovo', 'Ovo'], ['o-queijo-branco', 'Queijo branco'],
+                ['o-requeijao-light', 'Requeijão light'], ['o-iogurte-desnatado', 'Iogurte desnatado'],
+                ['o-whey-protein', 'Whey protein']];
+  eq('instalação nova já vem com tudo', prot(), NOVA);
 
-  // Quem já tinha o app aberto com o nome antigo é corrigido NO LUGAR:
-  // não é plano novo, é a mesma comida escrita melhor.
+  // Quem já tinha o app aberto é corrigido NO LUGAR: nome mal escrito e
+  // alimento novo não são plano novo, e não podem arquivar o plano dela.
   run(ctx, `
     const d = DB.get('dietas');
     const g = d[0].refeicoes[0].grupos.find(x => x.id === 'g-cafe-prot');
-    g.opcoes[1] = { id: 'o-queijo-minas-frescal', nome: 'Queijo minas frescal', medida: med(20, 'g') };
+    g.opcoes = [g.opcoes[0],
+      { id: 'o-queijo-minas-frescal', nome: 'Queijo minas frescal', medida: med(20, 'g') },
+      g.opcoes[2]];
+    const a = d[0].refeicoes[2].grupos.find(x => x.id === 'g-al-a');
+    a.opcoes = a.opcoes.filter(o => o.id !== 'o-couve-flor');
     DB.set('dietas', d);
-    corrigirNomes();
+    corrigirPlano();
   `);
-  eq('o nome antigo é trocado sem criar versão nova', prot(),
-     [['o-ovo', 'Ovo'], ['o-queijo-branco', 'Queijo branco'], ['o-requeijao-light', 'Requeijão light']]);
+  eq('o nome antigo é trocado e o que faltava é somado', prot(), NOVA);
+  eq('couve-flor entra no grupo A do almoço', run(ctx, `
+    dietaAtiva().refeicoes[2].grupos.find(g => g.id === 'g-al-a').opcoes.some(o => o.id === 'o-couve-flor');
+  `), true);
   eq('e continua tendo uma dieta só', run(ctx, "DB.get('dietas').length"), 1);
   eq('a medida da clínica não se perde no caminho', run(ctx, `
     medidaTexto(dietaAtiva().refeicoes[0].grupos.find(g => g.id === 'g-cafe-prot').opcoes[1].medida);
@@ -1103,10 +1124,70 @@ console.log('\n── Correção de rótulo (queijo branco) ──────')
     let gravou = false;
     const original = DB.set;
     DB.set = (k, v) => { if (k === 'dietas') gravou = true; return original(k, v); };
-    corrigirNomes();
+    corrigirPlano();
     DB.set = original;
     gravou;
   `), false);
+}
+
+console.log('\n── Comidas novas e quantidade livre ────────');
+{
+  const ctx = novoSandbox();
+
+  eq('couve e couve-flor convivem no grupo A', run(ctx, `
+    const g = dietaAtiva().refeicoes[2].grupos.find(x => x.id === 'g-al-a');
+    ['o-couve','o-couve-flor'].map(id => g.opcoes.some(o => o.id === id));
+  `), [true, true]);
+  eq('e também nos vegetais da refeição extra', run(ctx, `
+    GRUPOS_EXTRA.find(c => c.id === 'x-veg').opcoes.some(o => o.id === 'o-couve-flor');
+  `), true);
+
+  eq('whey aparece como suplemento nas proteínas', run(ctx, `
+    const gp = dietaAtiva().refeicoes[2].grupos.find(x => x.id === 'g-al-prot');
+    const w = gp.opcoes.find(o => o.id === 'o-whey-protein');
+    [w.secao, medidaTexto(w.medida), w.sugestoes];
+  `), ['Suplemento', '30 g', [20, 25, 30, 40]]);
+  eq('iogurte e whey entram na proteína do café', run(ctx, `
+    const gc = dietaAtiva().refeicoes[0].grupos.find(x => x.id === 'g-cafe-prot');
+    ['o-iogurte-desnatado','o-whey-protein'].map(id => gc.opcoes.some(o => o.id === id));
+  `), [true, true]);
+
+  // O whey pergunta os gramas: chips de um toque no item já escolhido
+  run(ctx, "abrirRefeicao('r-almoco'); escolher('g-al-prot', 'o-whey-protein');");
+  eq('nasce com a porção padrão',
+     run(ctx, "medidaTexto(sel['g-al-prot'][0].medida)"), '30 g');
+  eq('e a tela oferece os gramas de um toque', run(ctx, `
+    const h = grupoHTML(dietaAtiva().refeicoes[2].grupos.find(g => g.id === 'g-al-prot'));
+    [h.includes('Quantos g?'), (h.match(/chip-sug/g) || []).length];
+  `), [true, 4]);
+  eq('escolher 25 g grava 25 g',
+     run(ctx, "definirMedida('g-al-prot', 0, 25); medidaTexto(sel['g-al-prot'][0].medida)"), '25 g');
+
+  // Duas proteínas no mesmo prato: o app registra o que ela comeu
+  run(ctx, "escolher('g-al-prot', 'o-patinho');");
+  eq('duas proteínas convivem',
+     run(ctx, "sel['g-al-prot'].map(i => i.nome)"), ['Whey protein', 'Patinho']);
+  eq('e o grupo continua completo (o mínimo é 1)',
+     run(ctx, "grupoCompleto(dietaAtiva().refeicoes[2].grupos.find(g => g.id === 'g-al-prot'))"), true);
+  eq('as duas vão pro registro', run(ctx, `
+    dietaAtiva().refeicoes[2].grupos.forEach(g => { const min = g.min != null ? g.min : g.qtd;
+      for (let k = 0; k < min && !grupoCompleto(g); k++) escolher(g.id, g.opcoes[k].id); });
+    confirmarRefeicao();
+    DB.get('logRefeicoes').find(l => l.refeicaoId === 'r-almoco')
+      .escolhas.find(e => e.grupoId === 'g-al-prot').itens.map(i => i.nome);
+  `), ['Whey protein', 'Patinho']);
+
+  // Recolher é conveniência, não trava: reabriu, continua aberto pra somar
+  run(ctx, `
+    abrirRefeicao('r-jantar');
+    escolher('g-ja-a', dietaAtiva().refeicoes[4].grupos[0].opcoes[0].id);
+    escolher('g-ja-a', dietaAtiva().refeicoes[4].grupos[0].opcoes[1].id);
+  `);
+  eq('fechou o mínimo: recolhe pra tirar a lista da frente',
+     run(ctx, "gruposAbertos.has('g-ja-a')"), false);
+  run(ctx, "abrirGrupo('g-ja-a'); escolher('g-ja-a', dietaAtiva().refeicoes[4].grupos[0].opcoes[2].id);");
+  eq('reabriu e somou um terceiro: NÃO recolhe de novo',
+     run(ctx, "[gruposAbertos.has('g-ja-a'), sel['g-ja-a'].length]"), [true, 3]);
 }
 
 console.log(`\n${falhou ? '✗' : '✓'} ${ok} passaram, ${falhou} falharam\n`);
