@@ -1207,11 +1207,17 @@ function removerExtra() {
 }
 
 // ══ MEDICAMENTOS ═══════════════════════════════════════════════
+// O "Tomei" do card grande continua sendo UM toque, que é o caso comum: ela
+// toma e marca na hora. Quem precisa de outro horário abre o item e ajusta —
+// tomou às 8h e só lembrou de marcar à noite.
 
-function tomarMedicamento(medId) {
+let medAtualId = null;
+let medHora = null;
+
+function tomarMedicamento(medId, hora) {
   const logs = DB.get('logMedicamentos') || [];
   if (logs.some(l => l.data === hoje() && l.medId === medId)) return;
-  logs.push({ id: uid(), data: hoje(), medId, hora: horaLocal() });
+  logs.push({ id: uid(), data: hoje(), medId, hora: hora || horaLocal() });
   DB.set('logMedicamentos', logs);
   const m = (DB.get('medicamentos') || []).find(x => x.id === medId);
   toast(`${m ? m.nome : 'Medicamento'} marcado`);
@@ -1224,25 +1230,66 @@ function abrirMedicamento(medId) {
   if (!m) return;
   const log = (DB.get('logMedicamentos') || []).find(l => l.data === hoje() && l.medId === medId);
 
-  abrirSheet(`
-    <div class="sheet-alca"></div>
+  medAtualId = medId;
+  medHora = log ? log.hora : horaLocal();
+
+  abrirSheet('<div class="sheet-alca"></div><div id="med-cx"></div>', () => RENDER.hoje());
+  renderMedicamento();
+}
+
+function renderMedicamento() {
+  const cx = document.getElementById('med-cx');
+  if (!cx) return;
+  const m = (DB.get('medicamentos') || []).find(x => x.id === medAtualId);
+  if (!m) return;
+  const log = (DB.get('logMedicamentos') || []).find(l => l.data === hoje() && l.medId === medAtualId);
+
+  cx.innerHTML = `
     <div class="sheet-cabeca">
-      <div>
+      <div style="flex:1;min-width:0">
         <h2>${esc(m.nome)}</h2>
-        <div class="dica">${esc([m.dose, m.hora].filter(Boolean).join(' · '))}</div>
+        <div class="dica">${esc(m.dose || '')}</div>
       </div>
       <button class="sheet-x" onclick="fecharSheet()" aria-label="Fechar">✕</button>
     </div>
+
     <div class="sheet-corpo">
-      ${m.obs ? `<p style="font-size:14px;color:var(--tinta-dim);line-height:1.6;margin-bottom:6px">${esc(m.obs)}</p>` : ''}
-      ${log ? `<div class="pill pill-folha" style="margin-bottom:6px">Tomado às ${esc(log.hora)}</div>` : ''}
+      ${m.obs ? `<p style="font-size:14px;color:var(--tinta-dim);line-height:1.6;margin-bottom:14px">${esc(m.obs)}</p>` : ''}
+      <div class="hora-registro" style="justify-content:flex-start">
+        <span class="hora-registro-lbl">${log ? 'Tomei às' : 'Tomar às'}</span>
+        ${horaToqueHTML(medHora, 'definirHoraMedicamento(this.value)')}
+      </div>
+      ${log ? '' : `<p class="sono-obs" style="text-align:left;padding:0">
+        Já vem com a hora de agora — se você tomou antes, toque para corrigir.</p>`}
     </div>
+
     <div class="sheet-pe">
       ${log
-        ? `<button class="btn btn-vazio" style="width:100%" onclick="desmarcarMedicamento('${esc(medId)}')">Desmarcar</button>`
-        : `<button class="btn btn-cheio btn-lavanda" style="width:100%" onclick="fecharSheet();tomarMedicamento('${esc(medId)}')">Tomei</button>`}
-    </div>
-  `);
+        ? `<button class="btn btn-vazio" style="width:100%" onclick="desmarcarMedicamento('${esc(medAtualId)}')">Desmarcar</button>`
+        : `<button class="btn btn-cheio btn-lavanda" style="width:100%" onclick="confirmarMedicamento()">Tomei</button>`}
+    </div>`;
+}
+
+/** Já registrado, mudar a hora salva na hora — não tem botão de confirmar
+ *  nessa tela, e deixar a mudança pendurada esperando um "salvar" que não
+ *  existe seria a forma mais fácil de perder o ajuste. */
+function definirHoraMedicamento(v) {
+  if (!v) return;
+  medHora = v;
+
+  const logs = DB.get('logMedicamentos') || [];
+  const l = logs.find(x => x.data === hoje() && x.medId === medAtualId);
+  if (l) {
+    l.hora = v;
+    DB.set('logMedicamentos', logs);
+    toast(`Horário atualizado para ${v}`);
+  }
+  renderMedicamento();
+}
+
+function confirmarMedicamento() {
+  tomarMedicamento(medAtualId, medHora);
+  fecharSheet();
 }
 
 function desmarcarMedicamento(medId) {

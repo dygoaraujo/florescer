@@ -1031,6 +1031,48 @@ console.log('\n── Carimbo à esquerda, quantidade à direita ──');
   `), 1);
 }
 
+console.log('\n── Horário das vitaminas ───────────────────');
+{
+  const ctx = novoSandbox();
+
+  // O caminho rápido continua sendo um toque: toma e marca na hora
+  run(ctx, "tomarMedicamento('m-multi');");
+  eq('o toque direto carimba a hora de agora', run(ctx, `
+    /^\\d\\d:\\d\\d$/.test(DB.get('logMedicamentos').find(l => l.medId === 'm-multi').hora);
+  `), true);
+
+  // Tomou às 8h e só lembrou de marcar à noite
+  run(ctx, "abrirMedicamento('m-multi'); definirHoraMedicamento('08:15');");
+  eq('já registrado, mudar a hora salva na hora',
+     run(ctx, "DB.get('logMedicamentos').find(l => l.medId === 'm-multi').hora"), '08:15');
+  eq('e não duplica o registro',
+     run(ctx, "DB.get('logMedicamentos').filter(l => l.medId === 'm-multi').length"), 1);
+  eq('o fio passa a mostrar a hora corrigida', run(ctx, `
+    horaVisivel(itensDoDia(hoje()).find(i => i.id === 'm-multi'));
+  `), '08:15');
+
+  // Ainda não tomado: escolhe a hora ANTES de confirmar
+  run(ctx, "abrirMedicamento('m-berberina'); definirHoraMedicamento('19:40'); confirmarMedicamento();");
+  eq('registra com a hora escolhida, não com a de agora',
+     run(ctx, "DB.get('logMedicamentos').find(l => l.medId === 'm-berberina').hora"), '19:40');
+
+  eq('reabrir traz a hora salva', run(ctx, "abrirMedicamento('m-berberina'); medHora"), '19:40');
+  eq('cancelar o seletor não zera a hora',
+     run(ctx, "definirHoraMedicamento(''); medHora"), '19:40');
+
+  eq('as 4 vitaminas usam o mesmo caminho', run(ctx, `
+    ['m-coentro','m-multi','m-berberina','m-sono'].every(id => {
+      abrirMedicamento(id);
+      return medAtualId === id && /^\\d\\d:\\d\\d$/.test(medHora);
+    });
+  `), true);
+
+  run(ctx, "desmarcarMedicamento('m-multi');");
+  eq('desmarcar limpa só aquele', run(ctx, `
+    DB.get('logMedicamentos').map(l => l.medId);
+  `), ['m-berberina']);
+}
+
 console.log('\n── Correção de rótulo (queijo branco) ──────');
 {
   const ctx = novoSandbox();
