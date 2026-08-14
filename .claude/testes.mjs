@@ -910,6 +910,16 @@ console.log('\n── Água em jejum ──────────────�
   `), 400);
   eq('lembra a quantidade pra próxima vez', run(ctx, "perfil().mlJejum"), 400);
 
+  // Registrar de noite o copo que ela bebeu ao acordar
+  run(ctx, "abrirJejum(); definirHoraJejum('06:40'); confirmarJejum();");
+  eq('a hora do jejum é editável', run(ctx, "jejumDoDia(hoje()).hora"), '06:40');
+  eq('e reabrir traz a hora salva, não a de agora',
+     run(ctx, "abrirJejum(); jejumHora"), '06:40');
+  eq('cancelar o seletor não zera a hora',
+     run(ctx, "definirHoraJejum(''); jejumHora"), '06:40');
+  eq('editar a hora não duplica o registro',
+     run(ctx, "DB.get('logAgua').filter(l => l.origem === 'jejum').length"), 1);
+
   // Beber mais durante o dia continua somando por cima, sem mexer no jejum
   run(ctx, "beberAgua(500);");
   eq('a água do card entra separada', run(ctx, `

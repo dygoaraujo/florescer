@@ -340,11 +340,13 @@ function abrirItem(tipo, id) {
 // Fora da nota de propósito (ela já pontua pela água), igual ao Dormir.
 
 let jejumMl = 300;
+let jejumHora = null;
 const JEJUM_OPCOES = [200, 300, 500];
 
 function abrirJejum() {
   const log = jejumDoDia(hoje());
   jejumMl = log ? log.ml : (perfil().mlJejum || 300);
+  jejumHora = log ? log.hora : horaLocal();
 
   abrirSheet('<div class="sheet-alca"></div><div id="jejum-cx"></div>', () => RENDER.hoje());
   renderJejum();
@@ -382,6 +384,11 @@ function renderJejum() {
           <button onclick="definirJejum(${jejumMl + 50})" aria-label="Aumentar">+</button>
         </div>
       </div>
+      <div class="hora-registro" style="justify-content:flex-start">
+        <span class="hora-registro-lbl">Bebi às</span>
+        ${horaToqueHTML(jejumHora, 'definirHoraJejum(this.value)')}
+      </div>
+
       <p class="sono-obs" style="text-align:left;padding:0">
         Isso já entra na conta de água do dia${log ? '' : ` — hoje você está em ${esc(fmt.litros(total))}`}.
         Não precisa marcar de novo no card lá em cima.
@@ -401,10 +408,18 @@ function definirJejum(ml) {
   renderJejum();
 }
 
+/** Ela pode registrar de noite o copo que bebeu ao acordar — a hora tem que
+ *  ser editável como em qualquer outro registro do app. */
+function definirHoraJejum(v) {
+  if (!v) return;
+  jejumHora = v;
+  renderJejum();
+}
+
 function confirmarJejum() {
   const data = hoje();
   const logs = (DB.get('logAgua') || []).filter(l => !(l.data === data && l.origem === 'jejum'));
-  logs.push({ id: uid(), data, hora: horaLocal(), ml: jejumMl, origem: 'jejum' });
+  logs.push({ id: uid(), data, hora: jejumHora || horaLocal(), ml: jejumMl, origem: 'jejum' });
   DB.set('logAgua', logs);
 
   // Guarda o quanto ela costuma beber: amanhã o sheet já abre certo, num toque.

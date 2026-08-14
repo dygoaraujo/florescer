@@ -748,6 +748,13 @@ function iniciar() {
   });
   window.addEventListener('popstate', aplicarHash);
 
+  // Sem pinça: o Safari do iPhone ignora `user-scalable=no` desde o iOS 10, e
+  // estes eventos proprietários de gesto são o único jeito de barrar o zoom de
+  // dois dedos. Sem isso ela encosta a mão na tela e o app sai do lugar, o que
+  // já denuncia que é um site. O zoom do sistema não passa por aqui.
+  ['gesturestart', 'gesturechange', 'gestureend'].forEach(evento =>
+    document.addEventListener(evento, e => e.preventDefault(), { passive: false }));
+
   // Storage persistente — principal defesa contra a eviction do iOS
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
 

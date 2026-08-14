@@ -2,10 +2,13 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<!-- Sem `user-scalable=no`: dar zoom com dois dedos continua valendo. O zoom
-     chato (duplo toque, foco em campo) já é barrado por `touch-action:manipulation`
-     e por campos com fonte de 16px. -->
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- Sem zoom: ele tem que se comportar como app, não como página. Isto aqui
+     resolve no Android e nos outros navegadores; o Safari do iPhone ignora
+     `user-scalable` desde o iOS 10, e lá quem barra a pinça é o bloqueio de
+     `gesturestart` em core.js. O zoom por duplo toque e o de foco em campo já
+     caem por `touch-action:manipulation` e por campos com fonte de 16px.
+     O zoom do sistema (Ajustes → Acessibilidade) continua funcionando. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Florescer</title>
 <meta name="description" content="Companheiro diário do tratamento.">
 <link rel="stylesheet" href="style.css">
