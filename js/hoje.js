@@ -61,8 +61,9 @@ function itensDoDia(data) {
       i.log = logM.find(x => x.medId === i.id) || null;
       i.estado = i.log ? 'feito' : 'pendente';
     } else if (i.tipo === 'treino') {
+      i.logs = logE;                       // pode ter mais de uma atividade no dia
       i.log = logE[0] || null;
-      i.estado = i.log ? 'feito' : 'pendente';
+      i.estado = logE.length ? 'feito' : 'pendente';
     } else if (i.tipo === 'dormir') {
       i.log = logS[0] || null;
       i.estado = i.log ? 'feito' : 'pendente';
@@ -150,11 +151,20 @@ function corDoItem(i) {
   return 'cat-refeicao';
 }
 
-/** Sem horário fixo, a refeição só mostra hora depois de registrada — e é a
- *  hora REAL que ela confirmou, nunca a de referência do plano. */
+/** NADA no dia tem hora marcada. O horário é sempre um carimbo do que já
+ *  aconteceu: aparece depois de registrado, com a hora real.
+ *  A única exceção é a sessão da clínica — ali é hora marcada de verdade,
+ *  um compromisso fora de casa que ela precisa saber antes. */
 function horaVisivel(i) {
-  if (i.tipo === 'refeicao') return i.log ? i.log.hora : '';
-  return i.hora;
+  if (i.tipo === 'sessao') return i.hora;
+  if (i.tipo === 'refeicao-extra') return i.hora;
+  // No treino o que importa é quanto, não quando: com academia de manhã e
+  // corrida à tarde, carimbar só a hora da primeira contaria meia verdade.
+  if (i.tipo === 'treino') {
+    const min = (i.logs || []).reduce((s, l) => s + (l.duracao || 0), 0);
+    return min ? fmt.duracao(min) : (i.log ? i.log.hora : '');
+  }
+  return i.log ? i.log.hora : '';
 }
 
 function noHTML(i, ativo) {
@@ -169,18 +179,18 @@ function noHTML(i, ativo) {
   return `
     <div class="${cls}">
       <button class="no-linha" onclick="abrirItem('${i.tipo}','${esc(i.id)}')">
-        <span class="no-hora num">${esc(hora)}</span>
         <span class="no-cat">${iconeItem(i)}</span>
         <span class="no-nome">${esc(i.nome)}</span>
-        <span class="no-ic">${marca}</span>
+        ${hora ? `<span class="no-hora num">${esc(hora)}</span>` : ''}
+        <span class="no-ic" ${hora ? '' : 'style="margin-left:auto"'}>${marca}</span>
       </button>
     </div>`;
 }
 
 // ── O card grande: a próxima coisa a fazer ───────────────────────
 function cardAgoraHTML(i) {
-  // Refeição não tem hora marcada — não existe "passou da hora" pra ela.
-  const semHorario = i.tipo === 'refeicao';
+  // Só a sessão na clínica tem hora marcada — logo, é a única que pode atrasar.
+  const semHorario = i.tipo !== 'sessao';
   const agora = minutosDe(horaLocal());
   const atrasado = !semHorario && minutosDe(i.hora) < agora - 20;
 
@@ -193,7 +203,7 @@ function cardAgoraHTML(i) {
     oque = [i.ref.dose, i.ref.obs].filter(Boolean).join(' · ');
     acoes = `<button class="btn btn-cheio btn-lavanda" onclick="tomarMedicamento('${esc(i.id)}')">Tomei</button>`;
   } else if (i.tipo === 'treino') {
-    oque = 'Escolha o que você fez hoje.';
+    oque = 'Escolha o que você fez hoje. Dá pra registrar mais de uma atividade.';
     acoes = `<button class="btn btn-cheio btn-lavanda" onclick="abrirExercicio()">Registrar treino</button>`;
   } else if (i.tipo === 'dormir') {
     oque = 'Feche o dia quando estiver deitada — o app guarda a hora.';
@@ -1075,28 +1085,35 @@ function desmarcarMedicamento(medId) {
 
 // ══ EXERCÍCIO ══════════════════════════════════════════════════
 
+// Um dia pode ter mais de uma atividade: ela vai na academia de manhã e corre
+// à tarde, e as duas contam. Por isso o sheet lista o que já foi registrado e
+// tem sempre um formulário aberto embaixo pra somar mais uma.
 let exercicioSel = null;
 let exercicioMin = 30;                          // duração em minutos
+let exercicioKm = 0;                            // 0 = não informado
 
 const DURACOES = [15, 20, 30, 45, 60, 90];
+const DISTANCIAS = [1, 2, 3, 5, 10];
+
+const treinosDoDia = data => (DB.get('logExercicios') || []).filter(l => l.data === data);
 
 function abrirExercicio() {
-  const log = (DB.get('logExercicios') || []).find(l => l.data === hoje());
-  exercicioSel = log ? log.tipo : null;
-  exercicioMin = log && log.duracao ? log.duracao : 30;
+  exercicioSel = null;
+  exercicioMin = 30;
+  exercicioKm = 0;
 
   abrirSheet(`
     <div class="sheet-alca"></div>
     <div class="sheet-cabeca">
       <div>
         <h2>Exercício de hoje</h2>
-        <div class="dica">O que você fez e por quanto tempo?</div>
+        <div class="dica">Pode registrar mais de uma atividade no mesmo dia.</div>
       </div>
       <button class="sheet-x" onclick="fecharSheet()" aria-label="Fechar">✕</button>
     </div>
     <div class="sheet-corpo" id="ex-corpo"></div>
     <div class="sheet-pe" id="ex-pe"></div>
-  `);
+  `, () => RENDER.hoje());
   renderExercicio();
 }
 
@@ -1104,10 +1121,29 @@ function renderExercicio() {
   const cx = document.getElementById('ex-corpo');
   if (!cx) return;
   const tipos = DB.get('exercicios') || SEED.exercicios;
+  const feitos = treinosDoDia(hoje());
+  const pedeKm = temDistancia(exercicioSel);
 
   cx.innerHTML = `
+    ${feitos.length ? `
+      <div class="grupo">
+        <div class="grupo-topo">
+          <span class="grupo-nome">Já registrado hoje</span>
+          <span class="grupo-cont num">${esc(fmt.duracao(feitos.reduce((s, l) => s + (l.duracao || 0), 0)))}</span>
+        </div>
+        ${feitos.map(l => `
+          <div class="atividade">
+            <span class="no-cat" style="color:var(--lavanda-forte)">${IC.treino}</span>
+            <span class="atividade-txt">
+              <span class="atividade-nome">${esc(l.tipo)}</span>
+              <span class="atividade-sub">${esc([fmt.duracao(l.duracao), fmt.km(l.distancia), l.hora].filter(Boolean).join(' · '))}</span>
+            </span>
+            <button class="atividade-x" onclick="removerAtividade('${esc(l.id)}')" aria-label="Remover">✕</button>
+          </div>`).join('')}
+      </div>` : ''}
+
     <div class="grupo">
-      <div class="grupo-topo"><span class="grupo-nome">Tipo de treino</span></div>
+      <div class="grupo-topo"><span class="grupo-nome">${feitos.length ? 'Somar outra atividade' : 'Tipo de treino'}</span></div>
       <div class="chips">
         ${tipos.map(t => `<button class="chip ${exercicioSel === t ? 'on' : ''}"
             onclick="selecionarExercicio('${esc(t)}')">${esc(t)}</button>`).join('')}
@@ -1117,7 +1153,7 @@ function renderExercicio() {
     <div class="grupo">
       <div class="grupo-topo">
         <span class="grupo-nome">Duração</span>
-        <span class="grupo-cont num">${exercicioMin} min</span>
+        <span class="grupo-cont num">${esc(fmt.duracao(exercicioMin))}</span>
       </div>
       <div class="chips" style="margin-bottom:10px">
         ${DURACOES.map(m => `<button class="chip ${exercicioMin === m ? 'on' : ''}"
@@ -1125,16 +1161,35 @@ function renderExercicio() {
       </div>
       <div class="stepper" style="width:fit-content">
         <button onclick="definirDuracao(${Math.max(5, exercicioMin - 5)})" aria-label="Diminuir">−</button>
-        <span class="stepper-v num">${exercicioMin} min</span>
+        <span class="stepper-v num">${esc(fmt.duracao(exercicioMin))}</span>
         <button onclick="definirDuracao(${exercicioMin + 5})" aria-label="Aumentar">+</button>
       </div>
-    </div>`;
+    </div>
+
+    ${pedeKm ? `
+      <div class="grupo">
+        <div class="grupo-topo">
+          <span class="grupo-nome">Distância</span>
+          <span class="grupo-cont num">${exercicioKm ? esc(fmt.km(exercicioKm)) : 'não informada'}</span>
+        </div>
+        <div class="chips" style="margin-bottom:10px">
+          ${DISTANCIAS.map(k => `<button class="chip ${exercicioKm === k ? 'on' : ''}"
+              onclick="definirDistancia(${k})">${k} km</button>`).join('')}
+        </div>
+        <div class="stepper" style="width:fit-content">
+          <button onclick="definirDistancia(${Math.max(0, Math.round((exercicioKm - 0.5) * 10) / 10)})" aria-label="Diminuir">−</button>
+          <span class="stepper-v num">${exercicioKm ? esc(fmt.km(exercicioKm)) : '—'}</span>
+          <button onclick="definirDistancia(${Math.round((exercicioKm + 0.5) * 10) / 10})" aria-label="Aumentar">+</button>
+        </div>
+        <p class="grupo-obs" style="margin-top:8px">Pode deixar em branco se não marcou.</p>
+      </div>` : ''}`;
 
   renderPeExercicio();
 }
 
 function selecionarExercicio(t) {
   exercicioSel = exercicioSel === t ? null : t;
+  if (!temDistancia(exercicioSel)) exercicioKm = 0;
   renderExercicio();
 }
 
@@ -1143,32 +1198,39 @@ function definirDuracao(m) {
   renderExercicio();
 }
 
+function definirDistancia(k) {
+  exercicioKm = Math.max(0, Math.min(200, Math.round(k * 10) / 10));
+  renderExercicio();
+}
+
 function renderPeExercicio() {
   const pe = document.getElementById('ex-pe');
   if (!pe) return;
-  const jaFeito = (DB.get('logExercicios') || []).some(l => l.data === hoje());
   pe.innerHTML = `
     <button class="btn btn-cheio btn-lavanda" style="width:100%${exercicioSel ? '' : ';opacity:.4'}"
       onclick="confirmarExercicio()" ${exercicioSel ? '' : 'disabled'}>
-      ${exercicioSel ? `Concluir ${exercicioMin} min de ${esc(exercicioSel.toLowerCase())}` : 'Escolha o tipo de treino'}
-    </button>
-    ${jaFeito ? `<button class="link-fraco" onclick="desmarcarExercicio()">Desmarcar o treino de hoje</button>` : ''}
-  `;
+      ${exercicioSel
+        ? `Registrar ${esc(fmt.duracao(exercicioMin))} de ${esc(exercicioSel.toLowerCase())}${exercicioKm ? ' · ' + esc(fmt.km(exercicioKm)) : ''}`
+        : 'Escolha o tipo de treino'}
+    </button>`;
 }
 
 function confirmarExercicio() {
   if (!exercicioSel) return;
-  const logs = (DB.get('logExercicios') || []).filter(l => l.data !== hoje());
-  logs.push({ id: uid(), data: hoje(), tipo: exercicioSel, duracao: exercicioMin, hora: horaLocal(), obs: '' });
-  DB.set('logExercicios', logs);
-  fecharSheet();
-  toast(`${exercicioSel} · ${exercicioMin} min 💜`);
+  DB.push('logExercicios', {
+    id: uid(), data: hoje(), tipo: exercicioSel, duracao: exercicioMin,
+    distancia: exercicioKm || null, hora: horaLocal(), obs: '',
+  });
+  toast(`${exercicioSel} · ${fmt.duracao(exercicioMin)} 💜`);
   checarConquistas();
-  RENDER.hoje();
+
+  // Fica aberto: se ela fez duas coisas, a segunda já entra em seguida.
+  exercicioSel = null;
+  exercicioKm = 0;
+  renderExercicio();
 }
 
-function desmarcarExercicio() {
-  DB.set('logExercicios', (DB.get('logExercicios') || []).filter(l => l.data !== hoje()));
-  fecharSheet();
-  RENDER.hoje();
+function removerAtividade(id) {
+  DB.set('logExercicios', (DB.get('logExercicios') || []).filter(l => l.id !== id));
+  renderExercicio();
 }

@@ -60,6 +60,16 @@ const fmt = {
     if (arr.length === 1) return arr[0];
     return arr.slice(0, -1).join(', ') + ' e ' + arr[arr.length - 1];
   },
+  km(n) {
+    if (!n) return '';
+    return Number(n).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' km';
+  },
+  // 95 → "1h35", 45 → "45 min"
+  duracao(min) {
+    if (!min) return '';
+    const h = Math.floor(min / 60);
+    return h ? `${h}h${String(min % 60).padStart(2, '0')}` : `${min} min`;
+  },
 };
 
 const DIAS_CURTOS = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
@@ -308,7 +318,8 @@ const SEED = {
       hora: '22:00', frequencia: 'diaria', dias: [], obs: 'Dissolver em água ou chá, antes de dormir.', ativo: true },
   ],
 
-  exercicios: ['Academia', 'Caminhada', 'Dança', 'Pilates', 'Musculação', 'Outro'],
+  exercicios: ['Academia', 'Musculação', 'Caminhada', 'Corrida', 'Bicicleta',
+               'Dança', 'Pilates', 'Funcional', 'Outro'],
 
   // O que costuma acontecer num dia de sessão
   // A aplicação do Mounjaro é SEMPRE na clínica, junto da sessão — por isso ela
@@ -320,7 +331,12 @@ const SEED = {
 // medicamento novo). É o que faz a mudança chegar em quem já abriu o app —
 // sem isso o iniciarDB() só semeia chave que ainda não existe, e o aparelho
 // fica preso no plano antigo pra sempre.
-const SEED_VERSAO = 7;
+/** Só nestes a distância diz alguma coisa — perguntar quilômetros de pilates
+ *  seria um campo pra ela ignorar todo dia. */
+const EXERCICIOS_COM_DISTANCIA = ['Caminhada', 'Corrida', 'Bicicleta', 'Natação'];
+const temDistancia = tipo => EXERCICIOS_COM_DISTANCIA.includes(tipo);
+
+const SEED_VERSAO = 8;
 const ID_DIETA_CLINICA = 'dieta-clinica-v' + SEED_VERSAO;
 
 const CHAVES_DADOS = [

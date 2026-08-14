@@ -59,7 +59,6 @@ RENDER.ajustes = function () {
             <span class="li-nome">${esc(m.nome)}${m.ativo ? '' : ' <span class="pill">pausado</span>'}</span>
             <span class="li-sub">${esc([m.dose, freqTexto(m)].filter(Boolean).join(' · '))}</span>
           </span>
-          <span class="li-fim">${esc(m.hora)}</span>
           <span style="color:var(--tinta-fraca)">${IC.seta}</span>
         </button>`).join('') : '<div class="vazio">Nada cadastrado ainda.</div>'}
       <button class="btn btn-vazio btn-sm" style="margin-top:14px" onclick="editarMedicamento()">${IC.mais} Medicamento</button>
@@ -82,23 +81,16 @@ RENDER.ajustes = function () {
       </div>
       <div class="campo">
         <label>Dias de exercício</label>
-        <div class="toggles">
+        <div class="toggles toggles-semana">
           ${DIAS_LETRA.map((l, k) => `
             <button class="toggle ${(p.diasExercicio || []).includes(k) ? 'on' : ''}"
               onclick="alternarDiaExercicio(${k})" aria-label="${DIAS_CURTOS[k]}">${l}</button>`).join('')}
         </div>
       </div>
-      <div class="campo-dupla">
-        <div class="campo">
-          <label for="aj-hex">Horário do treino</label>
-          <input id="aj-hex" type="time" value="${esc(p.horaExercicio || '18:00')}"
-                 onchange="salvarPerfil('horaExercicio', this.value)">
-        </div>
-        <div class="campo">
-          <label for="aj-mex">Meta na semana</label>
-          <input id="aj-mex" type="number" inputmode="numeric" min="0" max="7" value="${p.metaSemanalExercicio}"
-                 onchange="salvarPerfil('metaSemanalExercicio', Number(this.value))">
-        </div>
+      <div class="campo">
+        <label for="aj-mex">Meta de treinos na semana</label>
+        <input id="aj-mex" type="number" inputmode="numeric" min="0" max="7" value="${p.metaSemanalExercicio}"
+               onchange="salvarPerfil('metaSemanalExercicio', Number(this.value))">
       </div>
       <div class="campo">
         <label>Tipos de treino</label>
@@ -107,18 +99,11 @@ RENDER.ajustes = function () {
           <button class="chip" onclick="novoTipoExercicio()" style="color:var(--tinta-dim)">${IC.mais}</button>
         </div>
       </div>
-      <div class="campo-dupla" style="margin-bottom:0">
-        <div class="campo" style="margin-bottom:0">
-          <label>Registrar o sono</label>
-          <div class="toggles">
-            <button class="toggle ${p.registrarSono ? 'on' : ''}" onclick="salvarPerfil('registrarSono', ${!p.registrarSono})">
-              ${p.registrarSono ? 'Sim' : 'Não'}</button>
-          </div>
-        </div>
-        <div class="campo" style="margin-bottom:0">
-          <label for="aj-sono">Hora de deitar</label>
-          <input id="aj-sono" type="time" value="${esc(p.horaSono || '23:00')}"
-                 onchange="salvarPerfil('horaSono', this.value)">
+      <div class="campo" style="margin-bottom:0">
+        <label>Registrar o sono</label>
+        <div class="toggles">
+          <button class="toggle ${p.registrarSono ? 'on' : ''}" onclick="salvarPerfil('registrarSono', ${!p.registrarSono})">
+            ${p.registrarSono ? 'Sim' : 'Não'}</button>
         </div>
       </div>
     </div>
@@ -505,10 +490,13 @@ function editarMedicamento(id) {
             <input id="md-dose" type="text" value="${esc(m?.dose || '')}" placeholder="1 cápsula">
           </div>
           <div class="campo">
-            <label for="md-hora">Horário</label>
+            <label for="md-hora">Posição no dia</label>
             <input id="md-hora" type="time" required value="${esc(m?.hora || '08:00')}">
           </div>
         </div>
+        <p style="font-size:12px;color:var(--tinta-fraca);line-height:1.5;margin:-4px 0 14px">
+          Define só a ordem no Fio do Dia e a lista de alarmes — ela não vê esse
+          horário. O que fica registrado é a hora em que ela marcar "Tomei".</p>
         <div class="campo">
           <label for="md-freq">Frequência</label>
           <select id="md-freq" onchange="document.getElementById('md-dias').style.display = this.value === 'diaria' ? 'none' : 'block'">

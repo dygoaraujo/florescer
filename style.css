@@ -322,16 +322,19 @@ input, select, textarea { font-size: 16px; }   /* < 16px faz o iOS dar zoom no f
   transition: background .2s ease;
 }
 .no-linha:active { background: var(--bruma); }
+/* Nada no dia tem hora marcada: o horário só existe DEPOIS, como carimbo do
+   que ela registrou. Por isso ele vive à direita, junto do ✓, e não numa
+   coluna à esquerda que ficaria vazia na maior parte das linhas. */
 .no-hora {
+  margin-left: auto;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   color: var(--tinta-fraca);
   flex-shrink: 0;
-  width: 38px;
 }
 .no-cat { flex-shrink: 0; display: flex; color: var(--cat, var(--tinta-fraca)); }
 .no-cat svg { width: 16px; height: 16px; }
-.no-nome { font-size: 15px; font-weight: 500; flex: 1; min-width: 0; color: var(--cat, var(--tinta)); }
+.no-nome { font-size: 15px; font-weight: 500; min-width: 0; color: var(--cat, var(--tinta)); }
 .no-ic { flex-shrink: 0; color: var(--tinta-fraca); display: flex; }
 
 /* Cor por CATEGORIA no texto e no ícone: bate o olho e já sabe se é comida,
@@ -553,7 +556,9 @@ input, select, textarea { font-size: 16px; }   /* < 16px faz o iOS dar zoom no f
   display: flex; align-items: center; justify-content: center;
   font-size: 17px;
 }
-.sheet-corpo { overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 0 22px 4px; }
+/* A folga embaixo evita o último campo nascer colado (e parecendo cortado) na
+   barra fixa do rodapé — era o que acontecia com "Situação" em Marcar sessão. */
+.sheet-corpo { overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 0 22px 18px; }
 .sheet-pe {
   padding: 14px 22px 18px;
   border-top: 1px solid var(--linha);
@@ -789,6 +794,7 @@ input, select, textarea { font-size: 16px; }   /* < 16px faz o iOS dar zoom no f
 }
 .campo input, .campo select, .campo textarea {
   width: 100%;
+  min-width: 0;           /* sem isso o input de data/hora não encolhe (ver .campo-dupla) */
   min-height: 48px;
   padding: 12px 15px;
   border-radius: 14px;
@@ -801,9 +807,24 @@ input, select, textarea { font-size: 16px; }   /* < 16px faz o iOS dar zoom no f
   outline: none;
   border-color: var(--lavanda-forte);
 }
+
+/* No Safari do iPhone o input de data/hora é um controle nativo com largura
+   intrínseca grande. Item de grid nasce com min-width:auto, então ele se recusa
+   a encolher, estoura a coluna e o campo da direita monta em cima dele — é o
+   quadro sobreposto que aparecia em "Horário do treino / Meta na semana". */
 .campo-dupla { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.campo-dupla > * { min-width: 0; }
+.campo input[type="date"], .campo input[type="time"] {
+  -webkit-appearance: none;
+  appearance: none;
+  text-align: left;       /* o nativo centraliza e desalinha do resto do form */
+}
 
 .toggles { display: flex; flex-wrap: wrap; gap: 7px; }
+/* Os 7 dias da semana cabem numa linha só — em flex-wrap sobrava um sábado
+   sozinho embaixo, que lia como se fosse outra coisa. */
+.toggles-semana { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+.toggles-semana .toggle { min-width: 0; padding: 0; }
 .toggle {
   min-width: 44px; min-height: 44px;
   padding: 0 13px;
@@ -1292,6 +1313,77 @@ button.cal-d:active { background: var(--bruma); transform: scale(.92); }
   color: var(--tinta-dim);
   padding: 0 12px 6px;
 }
+
+/* ── Diário: alimentação x treino ───────────────────────────── */
+/* Duas coisas diferentes na mesma tela pedem um corte forte no topo. O
+   segmentado diz QUAL assunto; os chips embaixo dizem QUAL período. */
+.segmentado {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  background: var(--bruma);
+  border-radius: 16px;
+  padding: 4px;
+  margin-bottom: 14px;
+}
+.seg {
+  min-height: 44px;
+  border-radius: 12px;
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--tinta-dim);
+  transition: background .2s ease, color .2s ease, box-shadow .2s ease;
+}
+.seg.on {
+  background: var(--nuvem);
+  color: var(--tinta);
+  box-shadow: 0 1px 3px rgba(74,63,82,.10);
+}
+
+/* Números do período: atividades, dias, tempo, distância */
+.treino-nums { display: flex; flex-wrap: wrap; gap: 22px; }
+.treino-num .v {
+  font-family: var(--display);
+  font-variation-settings: 'SOFT' 100, 'opsz' 40;
+  font-size: 23px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+.treino-num .k { font-size: 11.5px; color: var(--tinta-dim); margin-top: 3px; }
+
+/* Ranking do que ela mais fez — barra proporcional, sem gráfico separado */
+.rank-linha { padding: 9px 0; border-bottom: 1px solid var(--linha); }
+.rank-linha:last-child { border-bottom: none; }
+.rank-topo { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; }
+.rank-nome { font-size: 14.5px; font-weight: 600; }
+.rank-cont { margin-left: auto; font-size: 12px; color: var(--tinta-dim); font-variant-numeric: tabular-nums; }
+.rank-barra { height: 6px; border-radius: 4px; background: var(--bruma); overflow: hidden; }
+.rank-barra i {
+  display: block; height: 100%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--lavanda-forte), var(--rosa-forte));
+}
+
+/* Uma atividade registrada, dentro do sheet do treino */
+.atividade {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--bruma);
+  border-radius: 14px;
+  padding: 11px 13px;
+  margin-bottom: 8px;
+}
+.atividade-txt { flex: 1; min-width: 0; }
+.atividade-nome { font-size: 14.5px; font-weight: 600; }
+.atividade-sub { font-size: 12.5px; color: var(--tinta-dim); margin-top: 2px; }
+.atividade-x {
+  flex-shrink: 0;
+  width: 34px; height: 34px;
+  border-radius: 10px;
+  color: var(--tinta-fraca);
+  display: flex; align-items: center; justify-content: center;
+}
+.atividade-x:active { background: var(--rosa-veu); color: var(--rosa-forte); }
 
 /* Hora real do registro — sem promessa de horário, só o carimbo ajustável */
 .hora-registro {

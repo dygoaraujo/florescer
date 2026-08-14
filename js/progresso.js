@@ -93,14 +93,17 @@ RENDER.progresso = function () {
   if (typeof renderAvisoRelatorio === 'function') renderAvisoRelatorio();
 };
 
-/** "12 treinos · 6h20 no total" — o tempo agora é registrado em cada treino. */
+/** "14 atividades em 9 dias · 6h20" — um dia pode ter mais de uma atividade,
+ *  então contar só o número de registros mentiria sobre a constância. */
 function resumoTreinos() {
   const logs = DB.get('logExercicios') || [];
   if (!logs.length) return 'últimas 12 semanas';
+  const dias = new Set(logs.map(l => l.data)).size;
   const min = logs.reduce((s, l) => s + (l.duracao || 0), 0);
-  if (!min) return `${logs.length} ${logs.length === 1 ? 'treino' : 'treinos'}`;
-  const h = Math.floor(min / 60);
-  return `${logs.length} ${logs.length === 1 ? 'treino' : 'treinos'} · ${h ? h + 'h' : ''}${String(min % 60).padStart(h ? 2 : 1, '0')}${h ? '' : ' min'}`;
+  const atividades = logs.length === dias
+    ? `${dias} ${dias === 1 ? 'treino' : 'treinos'}`
+    : `${logs.length} atividades em ${dias} ${dias === 1 ? 'dia' : 'dias'}`;
+  return min ? `${atividades} · ${fmt.duracao(min)}` : atividades;
 }
 
 /** Sono: o que interessa é o horário, não a duração — a clínica pediu

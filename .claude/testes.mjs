@@ -793,21 +793,93 @@ console.log('\n── Refeição extra ─────────────�
   `), 1);
 }
 
-console.log('\n── Histórico de treino ──────────────────────');
+console.log('\n── Treino: várias atividades no mesmo dia ───');
+{
+  const ctx = novoSandbox();
+
+  // Academia de manhã e corrida à tarde — as duas contam, no mesmo dia
+  run(ctx, `
+    abrirExercicio();
+    selecionarExercicio('Musculação'); definirDuracao(60); confirmarExercicio();
+    selecionarExercicio('Corrida');    definirDuracao(30); definirDistancia(5); confirmarExercicio();
+  `);
+  eq('as duas ficam registradas no mesmo dia', run(ctx, "treinosDoDia(hoje()).length"), 2);
+  eq('a segunda guardou a distância', run(ctx, `
+    treinosDoDia(hoje()).find(l => l.tipo === 'Corrida').distancia;
+  `), 5);
+  eq('musculação não pergunta distância', run(ctx, "temDistancia('Musculação')"), false);
+  eq('corrida, caminhada e bicicleta perguntam', run(ctx, `
+    ['Corrida','Caminhada','Bicicleta'].map(temDistancia);
+  `), [true, true, true]);
+  eq('trocar pra um tipo sem distância zera os km', run(ctx, `
+    definirDistancia(8); selecionarExercicio('Pilates'); exercicioKm;
+  `), 0);
+  eq('o fio marca o dia como treinado', run(ctx, `
+    itensDoDia(hoje()).find(i => i.tipo === 'treino').estado;
+  `), 'feito');
+  eq('e a nota conta o treino uma vez só, não duas', run(ctx, `
+    notaDoDia(hoje()).partes.exercicio;
+  `), 1);
+  eq('remover uma atividade não leva a outra junto', run(ctx, `
+    removerAtividade(treinosDoDia(hoje()).find(l => l.tipo === 'Corrida').id);
+    treinosDoDia(hoje()).map(l => l.tipo);
+  `), ['Musculação']);
+}
+
+console.log('\n── Diário: alimentação e treino separados ───');
 {
   const ctx = novoSandbox();
   run(ctx, `
     DB.set('logExercicios', [
-      {id:'e1',data:hoje(),tipo:'Caminhada',duracao:45,hora:'18:10',obs:''},
-      {id:'e2',data:somaDias(hoje(),-2),tipo:'Pilates',duracao:60,hora:'07:30',obs:''},
+      {id:'e1',data:hoje(),tipo:'Caminhada',duracao:45,distancia:4,hora:'18:10',obs:''},
+      {id:'e2',data:hoje(),tipo:'Musculação',duracao:60,hora:'07:30',obs:''},
+      {id:'e3',data:somaDias(hoje(),-1),tipo:'Caminhada',duracao:30,distancia:3,hora:'19:00',obs:''},
     ]);
   `);
-  eq('lista os dois treinos, mais recente primeiro', run(ctx, `
-    treinoHistoricoHTML().indexOf('Caminhada') < treinoHistoricoHTML().indexOf('Pilates');
+  eq('o resumo soma atividades, dias, tempo e distância', run(ctx, `
+    const h = treinoHistoricoHTML('tudo');
+    [h.includes('>3<'), h.includes('2h15'), h.includes('7,0 km')];
+  `), [true, true, true]);
+  eq('o ranking põe o que ela mais fez em primeiro', run(ctx, `
+    const hr = treinoHistoricoHTML('tudo');
+    hr.indexOf('rank-nome">Caminhada') < hr.indexOf('rank-nome">Musculação');
   `), true);
-  eq('mostra a duração formatada', run(ctx, `
-    treinoHistoricoHTML().includes('1h00') && treinoHistoricoHTML().includes('45 min');
+  eq('cada atividade aparece na lista do dia', run(ctx, `
+    (treinoHistoricoHTML('tudo').match(/refeicao-nome/g) || []).length;
+  `), 3);
+  eq('período vazio explica em vez de mostrar nada', run(ctx, `
+    DB.set('logExercicios', []); treinoHistoricoHTML('semana').includes('Nenhuma atividade');
   `), true);
+
+  // Os dois assuntos são independentes: trocar de aba não mistura os períodos
+  eq('o segmentado começa em alimentação', run(ctx, "assuntoDiario"), 'alimentacao');
+  eq('trocar pra treino troca o corpo da tela', run(ctx, `
+    verDiario('treino'); subtituloDiario();
+  `), 'o que você treinou');
+  eq('e cada assunto guarda o próprio período', run(ctx, `
+    verPeriodo('mes'); verDiario('alimentacao'); [periodoComida, periodoTreino];
+  `), ['hoje', 'mes']);
+}
+
+console.log('\n── Nada no dia tem hora marcada ────────────');
+{
+  const ctx = novoSandbox();
+  const semHora = run(ctx, `
+    itensDoDia(hoje()).filter(i => i.tipo !== 'sessao').map(i => horaVisivel(i));
+  `);
+  eq('remédio, refeição, treino e dormir nascem sem horário',
+     semHora.every(h => h === ''), true);
+  eq('depois de tomar, o remédio carimba a hora real', run(ctx, `
+    tomarMedicamento('m-berberina');
+    horaVisivel(itensDoDia(hoje()).find(i => i.id === 'm-berberina')) !== '';
+  `), true);
+  eq('a sessão na clínica mantém a hora — é compromisso marcado', run(ctx, `
+    DB.set('sessoes', [{id:'s1',data:hoje(),hora:'09:00',clinica:'X',feita:false}]);
+    horaVisivel(itensDoDia(hoje()).find(i => i.tipo === 'sessao'));
+  `), '09:00');
+  eq('e é a única que pode aparecer como atrasada', run(ctx, `
+    cardAgoraHTML(itensDoDia(hoje()).find(i => i.tipo === 'refeicao')).includes('Passou da hora');
+  `), false);
 }
 
 console.log(`\n${falhou ? '✗' : '✓'} ${ok} passaram, ${falhou} falharam\n`);

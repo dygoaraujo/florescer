@@ -1,37 +1,79 @@
-/* ══ FLORESCER — Alimentação ═════════════════════════════════════
-   Só consulta: o que ela comeu hoje, o histórico e o plano ativo.
-   Registrar é sempre pela tela Hoje — por isso nada aqui salva nada.
+/* ══ FLORESCER — Diário ══════════════════════════════════════════
+   Onde ela olha pra trás: o que comeu e o que treinou. Duas coisas
+   diferentes, então o topo corta por ASSUNTO (alimentação x treino) e
+   só depois por PERÍODO — treino no meio da lista de comida não achava
+   quem procurava nem quem não procurava.
+
+   Só consulta: registrar é sempre pela tela Hoje.
    ════════════════════════════════════════════════════════════════ */
 
-let vistaComida = 'hoje';   // hoje | historico | treino | plano
+let assuntoDiario = 'alimentacao';   // alimentacao | treino
+let periodoComida = 'hoje';          // hoje | semana | mes | plano
+let periodoTreino = 'semana';        // semana | mes | tudo
+
+const PERIODOS_COMIDA = [['hoje', 'Hoje'], ['semana', 'Semana'], ['mes', 'Mês'], ['plano', 'Meu plano']];
+const PERIODOS_TREINO = [['semana', 'Semana'], ['mes', 'Mês'], ['tudo', 'Tudo']];
 
 RENDER.alimentacao = function () {
-  const dieta = dietaAtiva();
+  const treino = assuntoDiario === 'treino';
+  const periodos = treino ? PERIODOS_TREINO : PERIODOS_COMIDA;
+  const atual = treino ? periodoTreino : periodoComida;
 
   document.getElementById('tela-alimentacao').innerHTML = `
     <header class="cabeca">
       <div class="cabeca-txt">
-        <h1>Alimentação</h1>
-        <div class="data">${esc(dieta ? dieta.nome : 'sem plano cadastrado')}</div>
+        <h1>Diário</h1>
+        <div class="data">${esc(subtituloDiario())}</div>
       </div>
     </header>
 
+    <div class="segmentado" role="tablist">
+      <button class="seg ${treino ? '' : 'on'}" role="tab" aria-selected="${!treino}"
+        onclick="verDiario('alimentacao')">Alimentação</button>
+      <button class="seg ${treino ? 'on' : ''}" role="tab" aria-selected="${treino}"
+        onclick="verDiario('treino')">Treino</button>
+    </div>
+
     <div class="chips" style="margin-bottom:18px">
-      ${[['hoje', 'Hoje'], ['historico', 'Histórico'], ['treino', 'Treino'], ['plano', 'Meu plano']].map(([v, l]) =>
-        `<button class="chip ${vistaComida === v ? 'on' : ''}" onclick="verComida('${v}')">${l}</button>`).join('')}
+      ${periodos.map(([v, l]) =>
+        `<button class="chip ${atual === v ? 'on' : ''}" onclick="verPeriodo('${v}')">${l}</button>`).join('')}
     </div>
 
     <div id="comida-corpo"></div>
   `;
 
-  const cx = document.getElementById('comida-corpo');
-  cx.innerHTML = vistaComida === 'hoje'      ? comidaHojeHTML()
-               : vistaComida === 'historico' ? comidaHistoricoHTML()
-               : vistaComida === 'treino'    ? treinoHistoricoHTML()
-               :                               comidaPlanoHTML();
+  document.getElementById('comida-corpo').innerHTML = treino ? corpoTreinoHTML() : corpoComidaHTML();
 };
 
-function verComida(v) { vistaComida = v; RENDER.alimentacao(); }
+function subtituloDiario() {
+  if (assuntoDiario === 'treino') return 'o que você treinou';
+  const d = dietaAtiva();
+  return d ? d.nome : 'sem plano cadastrado';
+}
+
+function verDiario(a) { assuntoDiario = a; RENDER.alimentacao(); }
+function verPeriodo(v) {
+  if (assuntoDiario === 'treino') periodoTreino = v; else periodoComida = v;
+  RENDER.alimentacao();
+}
+
+function corpoComidaHTML() {
+  if (periodoComida === 'hoje')  return comidaHojeHTML();
+  if (periodoComida === 'plano') return comidaPlanoHTML();
+  return comidaHistoricoHTML(periodoComida);
+}
+
+function corpoTreinoHTML() { return treinoHistoricoHTML(periodoTreino); }
+
+/** Recorte de período, igual pros dois assuntos: semana = a semana corrente
+ *  (seg→sáb, a mesma do relatório), mês = o mês do calendário. */
+function dentroDoPeriodo(data, periodo) {
+  if (periodo === 'semana') return data >= inicioSemana(hoje());
+  if (periodo === 'mes')    return data.startsWith(hoje().slice(0, 7));
+  return true;
+}
+
+const ROTULO_PERIODO = { semana: 'nesta semana', mes: 'neste mês', tudo: 'desde o início' };
 
 /** O registro guarda nome e medida de cada item, então o histórico continua
  *  legível mesmo depois de a nutricionista trocar o plano inteiro. */
@@ -143,22 +185,27 @@ function comidaHojeHTML() {
 }
 
 // ── Histórico ────────────────────────────────────────────────────
-function comidaHistoricoHTML() {
-  const logs = DB.get('logRefeicoes') || [];
+function comidaHistoricoHTML(periodo = 'mes') {
+  const logs = (DB.get('logRefeicoes') || []).filter(l => dentroDoPeriodo(l.data, periodo));
   const dias = [...new Set(logs.map(l => l.data))].sort().reverse().slice(0, 60);
-  if (!dias.length) return `<div class="vazio"><span class="flor">🍽</span>Ainda não há refeições registradas.</div>`;
+  if (!dias.length) {
+    return `<div class="vazio"><span class="flor">🍽</span>Nenhuma refeição registrada ${esc(ROTULO_PERIODO[periodo] || '')}.</div>`;
+  }
 
   const dieta = dietaAtiva();
-  const totalRefs = dieta ? dieta.refeicoes.length : 0;
+  const totalRefs = refeicoesAtivas(dieta).length;
 
   return dias.map(d => {
     const doDia = logs.filter(l => l.data === d);
-    const feitas = doDia.filter(l => l.status === 'feita');
+    // A conta do dia é sobre o plano; refeição extra é bônus e não infla o placar.
+    const feitas = doDia.filter(l => l.status === 'feita' && !l.extra);
+    const extras = doDia.filter(l => l.extra).length;
     return `
       <div class="cartao" style="padding:16px 18px">
         <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:10px">
           <span style="font-weight:600;font-size:14.5px">${esc(fmt.maiuscula(fmt.longa(d)))}</span>
-          <span class="li-fim" style="margin-left:auto">${feitas.length}${totalRefs ? '/' + totalRefs : ''} · ${notaDe(d)}%</span>
+          <span class="li-fim" style="margin-left:auto">${feitas.length}${totalRefs ? '/' + totalRefs : ''}${
+            extras ? ` +${extras}` : ''} · ${notaDe(d)}%</span>
         </div>
         ${doDia.sort((a, b) => a.hora.localeCompare(b.hora)).map(l => `
           <div class="refeicao-dia ${l.status === 'feita' ? 'feita' : ''}">
@@ -205,40 +252,85 @@ function comidaPlanoHTML() {
 }
 
 // ── Treino ───────────────────────────────────────────────────────
-function formatarDuracao(min) {
-  if (!min) return '';
-  const h = Math.floor(min / 60);
-  return h ? `${h}h${String(min % 60).padStart(2, '0')}` : `${min} min`;
-}
+function treinoHistoricoHTML(periodo = 'semana') {
+  const todos = (DB.get('logExercicios') || []).slice().sort((a, b) =>
+    b.data.localeCompare(a.data) || (b.hora || '').localeCompare(a.hora || ''));
+  const logs = todos.filter(l => dentroDoPeriodo(l.data, periodo));
 
-function treinoHistoricoHTML() {
-  const logs = (DB.get('logExercicios') || []).slice().sort((a, b) => b.data.localeCompare(a.data));
-  if (!logs.length) return `<div class="vazio"><span class="flor">💪</span>Ainda não há treinos registrados.</div>`;
+  if (!logs.length) {
+    return `<div class="vazio"><span class="flor">💪</span>Nenhuma atividade registrada ${esc(ROTULO_PERIODO[periodo])}.
+      <br><span style="font-size:12.5px">Registre pela tela Hoje, no item Exercício.</span></div>`;
+  }
 
-  const semanaIni = inicioSemana(hoje());
-  const mesIni = hoje().slice(0, 7);
-  const daSemana = logs.filter(l => l.data >= semanaIni);
-  const doMes = logs.filter(l => l.data.startsWith(mesIni));
-  const bloco = (n, rot, min) => `
-    <div>
-      <div class="num" style="font-family:var(--display);font-variation-settings:'SOFT' 100,'opsz' 40;font-size:21px;font-weight:500">${n}</div>
-      <div style="font-size:11.5px;color:var(--tinta-dim);margin-top:2px">${esc(rot)}${min ? ' · ' + esc(formatarDuracao(min)) : ''}</div>
-    </div>`;
+  const dias = new Set(logs.map(l => l.data));
+  const minutos = logs.reduce((s, l) => s + (l.duracao || 0), 0);
+  const km = logs.reduce((s, l) => s + (l.distancia || 0), 0);
+  const meta = perfil().metaSemanalExercicio || 0;
+
+  const num = (v, k) => `<div class="treino-num"><div class="v">${esc(String(v))}</div><div class="k">${esc(k)}</div></div>`;
 
   return `
-    <div class="cartao" style="display:flex;gap:24px">
-      ${bloco(daSemana.length, 'treinos esta semana', daSemana.reduce((s, l) => s + (l.duracao || 0), 0))}
-      ${bloco(doMes.length, 'treinos este mês', doMes.reduce((s, l) => s + (l.duracao || 0), 0))}
-    </div>
-    <div class="cartao">${typeof heatmapTreinos === 'function' ? heatmapTreinos() : ''}</div>
     <div class="cartao">
-      ${logs.map(l => `
-        <div class="refeicao-dia feita">
-          <div class="refeicao-topo">
-            <span class="refeicao-nome">${esc(l.tipo)}</span>
-            <span class="pill pill-folha">${esc(l.hora || '')}</span>
+      <div class="treino-nums">
+        ${num(logs.length, logs.length === 1 ? 'atividade' : 'atividades')}
+        ${num(dias.size, dias.size === 1 ? 'dia treinado' : 'dias treinados')}
+        ${minutos ? num(fmt.duracao(minutos), 'no total') : ''}
+        ${km ? num(fmt.km(km), 'percorridos') : ''}
+      </div>
+      ${periodo === 'semana' && meta ? `<div class="peso-hero-meta" style="margin-top:14px">
+        Meta da semana: <strong>${dias.size} de ${meta}</strong> ${meta === 1 ? 'dia' : 'dias'}.</div>` : ''}
+    </div>
+
+    ${rankingTreinoHTML(logs)}
+
+    ${periodo === 'tudo' && typeof heatmapTreinos === 'function'
+      ? `<div class="sec"><h2>Constância</h2><span class="sub">últimas 12 semanas</span></div>
+         <div class="cartao">${heatmapTreinos()}</div>` : ''}
+
+    <div class="sec"><h2>Cada atividade</h2></div>
+    ${[...new Set(logs.map(l => l.data))].map(d => `
+      <div class="cartao" style="padding:16px 18px">
+        <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:10px">
+          <span style="font-weight:600;font-size:14.5px">${esc(fmt.maiuscula(fmt.longa(d)))}</span>
+          <span class="li-fim" style="margin-left:auto">${esc(fmt.duracao(
+            logs.filter(l => l.data === d).reduce((s, l) => s + (l.duracao || 0), 0)))}</span>
+        </div>
+        ${logs.filter(l => l.data === d).map(l => `
+          <div class="refeicao-dia feita">
+            <div class="refeicao-topo">
+              <span class="refeicao-nome">${esc(l.tipo)}</span>
+              <span class="li-fim num">${esc(l.hora || '')}</span>
+            </div>
+            <div class="refeicao-pede">${esc([fmt.duracao(l.duracao), fmt.km(l.distancia)].filter(Boolean).join(' · ')) || '—'}</div>
+          </div>`).join('')}
+      </div>`).join('')}`;
+}
+
+/** O que ela mais fez no período. Barra proporcional ao tipo campeão — é a
+ *  pergunta que ela faz olhando pra trás ("tenho caminhado ou só academia?"). */
+function rankingTreinoHTML(logs) {
+  const porTipo = {};
+  logs.forEach(l => {
+    const t = porTipo[l.tipo] || (porTipo[l.tipo] = { vezes: 0, minutos: 0, km: 0 });
+    t.vezes++;
+    t.minutos += l.duracao || 0;
+    t.km += l.distancia || 0;
+  });
+  const lista = Object.entries(porTipo).sort((a, b) => b[1].vezes - a[1].vezes || b[1].minutos - a[1].minutos);
+  if (lista.length < 2) return '';
+
+  const topo = lista[0][1].vezes;
+  return `
+    <div class="sec"><h2>O que você mais fez</h2></div>
+    <div class="cartao">
+      ${lista.map(([tipo, t]) => `
+        <div class="rank-linha">
+          <div class="rank-topo">
+            <span class="rank-nome">${esc(tipo)}</span>
+            <span class="rank-cont">${t.vezes}×${t.minutos ? ' · ' + esc(fmt.duracao(t.minutos)) : ''}${
+              t.km ? ' · ' + esc(fmt.km(t.km)) : ''}</span>
           </div>
-          <div class="refeicao-pede">${esc(fmt.maiuscula(fmt.longa(l.data)))}${l.duracao ? ` · ${formatarDuracao(l.duracao)}` : ''}</div>
+          <div class="rank-barra"><i style="width:${(t.vezes / topo * 100).toFixed(1)}%"></i></div>
         </div>`).join('')}
     </div>`;
 }

@@ -87,7 +87,12 @@ function dadosSemana(ini) {
     aguaTotal,
     diasMetaAgua: dias.filter(d => aguaDoDia(d) >= metaAgua).length,
     diasNaSemana: dias.length,
-    treinos: logE.length,
+    // `treinos` = DIAS treinados (é contra isso que a meta semanal compara).
+    // `atividades` conta cada registro, porque um dia pode ter academia + corrida.
+    treinos: new Set(logE.map(l => l.data)).size,
+    atividades: logE.length,
+    minutosTreino: logE.reduce((s, l) => s + (l.duracao || 0), 0),
+    kmTreino: logE.reduce((s, l) => s + (l.distancia || 0), 0),
     tiposTreino: [...new Set(logE.map(l => l.tipo))],
     pesoIni, pesoFim,
     pesoPerdido: (pesoIni != null && pesoFim != null) ? pesoIni - pesoFim : null,
@@ -272,8 +277,13 @@ function abrirRelatorio(ini) {
         O que mais faltou no prato: ${esc(fmt.lista(r.faltasComuns.map(f => `${f.nome} (${f.vezes}×)`)))}.</p>` : ''}
       ${linha('Água', fmt.litros(r.aguaTotal), r.aguaTotal / 1000, ant ? ant.aguaTotal / 1000 : null, false)}
       ${linha('Dias que bateu a meta de água', `${r.diasMetaAgua} de ${r.diasNaSemana}`, r.diasMetaAgua, ant?.diasMetaAgua, false)}
-      ${linha('Treinos', `${r.treinos}${perfil().metaSemanalExercicio ? ' de ' + perfil().metaSemanalExercicio : ''}`,
+      ${linha('Dias de treino', `${r.treinos}${perfil().metaSemanalExercicio ? ' de ' + perfil().metaSemanalExercicio : ''}`,
               r.treinos, ant?.treinos, false)}
+      ${r.atividades && r.atividades !== r.treinos
+        ? linha('Atividades', String(r.atividades), r.atividades, ant?.atividades, false) : ''}
+      ${r.minutosTreino ? linha('Tempo de treino', fmt.duracao(r.minutosTreino),
+              r.minutosTreino, ant?.minutosTreino, false) : ''}
+      ${r.kmTreino ? linha('Distância', fmt.km(r.kmTreino), r.kmTreino, ant?.kmTreino, false) : ''}
       ${linha('Vitaminas', `${r.vitaminas}${r.vitaminasEsperadas ? ' de ' + r.vitaminasEsperadas : ''}`,
               r.vitaminas, ant?.vitaminas, false)}
       ${r.tiposTreino.length ? `<p style="font-size:13px;color:var(--tinta-dim);padding:12px 0 0">
