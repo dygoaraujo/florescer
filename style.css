@@ -344,7 +344,11 @@ input, select, textarea { font-size: 16px; }   /* < 16px faz o iOS dar zoom no f
 .cat-remedio  { --cat: var(--rosa-forte); }
 .cat-treino   { --cat: var(--lavanda-forte); }
 .cat-sessao   { --cat: var(--ouro-forte); }
-.cat-dormir   { --cat: var(--ceu-forte); }
+/* Céu é exclusivo de água — com a água em jejum no fio, o azul da lua viraria
+   uma segunda coisa azul querendo dizer outra coisa. A lua fica no tom quieto,
+   que combina mais com fechar o dia. */
+.cat-dormir   { --cat: var(--tinta-dim); }
+.cat-agua     { --cat: var(--ceu-forte); }
 
 .no.feito .no-nome { opacity: .5; }
 .no.feito .no-ic   { color: var(--cat, var(--rosa-forte)); }

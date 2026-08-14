@@ -222,6 +222,8 @@ const SEED = {
     horaExercicio: '18:00',
     registrarSono: true,
     horaSono: '23:00',
+    registrarJejum: true,               // primeira coisa do dia: água pura
+    mlJejum: 300,                       // último valor que ela usou, pra abrir já certo
     inicioTratamento: dataLocal(),
   },
 
@@ -433,6 +435,12 @@ function ehDiaDeTreino(data) {
 }
 
 const aguaDoDia = data => (DB.get('logAgua') || []).filter(l => l.data === data).reduce((s, l) => s + l.ml, 0);
+
+/** A água em jejum NÃO tem registro próprio: ela é um `logAgua` com origem
+ *  marcada. Assim já soma no total do dia sozinha, o ↺ desfaz sem tratamento
+ *  especial, e sincroniza junto com o resto — nada pra dessincronizar. */
+const jejumDoDia = data =>
+  (DB.get('logAgua') || []).find(l => l.data === data && l.origem === 'jejum') || null;
 
 // ══ NOTA DO DIA ════════════════════════════════════════════════
 // Refeições 40 · água 25 · medicamentos 20 · exercício 15.

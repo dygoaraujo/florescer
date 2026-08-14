@@ -882,5 +882,59 @@ console.log('\n── Nada no dia tem hora marcada ─────────�
   `), false);
 }
 
+console.log('\n── Água em jejum ───────────────────────────');
+{
+  const ctx = novoSandbox();
+
+  eq('abre o dia, antes de tudo', run(ctx, "itensDoDia(hoje())[0].tipo"), 'jejum');
+  eq('começa pendente', run(ctx, `
+    itensDoDia(hoje()).find(i => i.tipo === 'jejum').estado;
+  `), 'pendente');
+  eq('e sem carimbo nenhum', run(ctx, `
+    horaVisivel(itensDoDia(hoje()).find(i => i.tipo === 'jejum'));
+  `), '');
+
+  run(ctx, "abrirJejum(); definirJejum(400); confirmarJejum();");
+  eq('vira UM registro de água, marcado como jejum', run(ctx, `
+    DB.get('logAgua').map(l => [l.ml, l.origem]);
+  `), [[400, 'jejum']]);
+  eq('já soma no total do dia sozinho', run(ctx, "aguaDoDia(hoje())"), 400);
+  eq('o item fecha e mostra o quanto', run(ctx, `
+    const i = itensDoDia(hoje()).find(x => x.tipo === 'jejum');
+    [i.estado, horaVisivel(i)];
+  `), ['feito', '400 ml']);
+  eq('o card de água avisa que já contou', run(ctx, `
+    renderAgua; jejumDoDia(hoje()).ml;
+  `), 400);
+  eq('lembra a quantidade pra próxima vez', run(ctx, "perfil().mlJejum"), 400);
+
+  // Beber mais durante o dia continua somando por cima, sem mexer no jejum
+  run(ctx, "beberAgua(500);");
+  eq('a água do card entra separada', run(ctx, `
+    [aguaDoDia(hoje()), DB.get('logAgua').filter(l => l.origem === 'jejum').length];
+  `), [900, 1]);
+
+  // Reabrir e salvar de novo corrige, não duplica
+  run(ctx, "abrirJejum(); definirJejum(300); confirmarJejum();");
+  eq('salvar de novo substitui, não duplica', run(ctx, `
+    [DB.get('logAgua').filter(l => l.origem === 'jejum').length, aguaDoDia(hoje())];
+  `), [1, 800]);
+
+  // O ↺ do card não precisa saber o que é jejum: apaga o último e o fio segue
+  run(ctx, "desfazerAgua();");
+  eq('o desfazer do card tira o último registro', run(ctx, "aguaDoDia(hoje())"), 500);
+  eq('e o item do fio volta a ficar pendente sozinho', run(ctx, `
+    itensDoDia(hoje()).find(i => i.tipo === 'jejum').estado;
+  `), 'pendente');
+
+  eq('não cria categoria nova na nota — pontua pela água', run(ctx, `
+    notaDoDia(hoje()).partes.jejum === undefined;
+  `), true);
+  eq('desligar nos Ajustes tira do fio', run(ctx, `
+    const p = perfil(); p.registrarJejum = false; DB.set('perfil', p);
+    itensDoDia(hoje()).some(i => i.tipo === 'jejum');
+  `), false);
+}
+
 console.log(`\n${falhou ? '✗' : '✓'} ${ok} passaram, ${falhou} falharam\n`);
 process.exit(falhou ? 1 : 0);

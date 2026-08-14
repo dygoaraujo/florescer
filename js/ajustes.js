@@ -99,11 +99,20 @@ RENDER.ajustes = function () {
           <button class="chip" onclick="novoTipoExercicio()" style="color:var(--tinta-dim)">${IC.mais}</button>
         </div>
       </div>
-      <div class="campo" style="margin-bottom:0">
-        <label>Registrar o sono</label>
-        <div class="toggles">
-          <button class="toggle ${p.registrarSono ? 'on' : ''}" onclick="salvarPerfil('registrarSono', ${!p.registrarSono})">
-            ${p.registrarSono ? 'Sim' : 'Não'}</button>
+      <div class="campo-dupla" style="margin-bottom:0">
+        <div class="campo" style="margin-bottom:0">
+          <label>Água em jejum</label>
+          <div class="toggles">
+            <button class="toggle ${p.registrarJejum ? 'on' : ''}" onclick="salvarPerfil('registrarJejum', ${!p.registrarJejum})">
+              ${p.registrarJejum ? 'Sim' : 'Não'}</button>
+          </div>
+        </div>
+        <div class="campo" style="margin-bottom:0">
+          <label>Registrar o sono</label>
+          <div class="toggles">
+            <button class="toggle ${p.registrarSono ? 'on' : ''}" onclick="salvarPerfil('registrarSono', ${!p.registrarSono})">
+              ${p.registrarSono ? 'Sim' : 'Não'}</button>
+          </div>
         </div>
       </div>
     </div>

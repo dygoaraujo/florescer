@@ -13,6 +13,11 @@ function itensDoDia(data) {
   const itens = [];
   const dieta = dietaAtiva();
 
+  // Abre o dia, antes de tudo — é o que "em jejum" quer dizer.
+  if (perfil().registrarJejum) itens.push({
+    tipo: 'jejum', id: 'jejum', hora: '00:01', nome: 'Água em jejum',
+  });
+
   // Sem horário fixo: `hora` aqui é só posição interna no dia (a ordem que a
   // clínica pensou), nunca uma promessa mostrada pra ela. O horário que
   // aparece de verdade é o que ela registrou na hora que confirmou.
@@ -66,6 +71,9 @@ function itensDoDia(data) {
       i.estado = logE.length ? 'feito' : 'pendente';
     } else if (i.tipo === 'dormir') {
       i.log = logS[0] || null;
+      i.estado = i.log ? 'feito' : 'pendente';
+    } else if (i.tipo === 'jejum') {
+      i.log = jejumDoDia(data);
       i.estado = i.log ? 'feito' : 'pendente';
     } else {
       i.estado = i.ref.feita ? 'feito' : 'pendente';
@@ -138,6 +146,7 @@ function iconeItem(i) {
   if (i.tipo === 'treino')   return IC.treino;
   if (i.tipo === 'sessao')   return IC.sessao;
   if (i.tipo === 'dormir')   return IC.lua;
+  if (i.tipo === 'jejum')    return IC.agua;
   return i.ref && i.ref.forma === 'gotas' ? IC.gota : IC.capsula;
 }
 
@@ -148,6 +157,7 @@ function corDoItem(i) {
   if (i.tipo === 'treino')  return 'cat-treino';
   if (i.tipo === 'sessao')  return 'cat-sessao';
   if (i.tipo === 'dormir')  return 'cat-dormir';
+  if (i.tipo === 'jejum')   return 'cat-agua';
   return 'cat-refeicao';
 }
 
@@ -164,6 +174,8 @@ function horaVisivel(i) {
     const min = (i.logs || []).reduce((s, l) => s + (l.duracao || 0), 0);
     return min ? fmt.duracao(min) : (i.log ? i.log.hora : '');
   }
+  // No jejum o quanto também vale mais que o quando: a hora é sempre "ao acordar".
+  if (i.tipo === 'jejum') return i.log ? `${i.log.ml} ml` : '';
   return i.log ? i.log.hora : '';
 }
 
@@ -207,7 +219,10 @@ function cardAgoraHTML(i) {
     acoes = `<button class="btn btn-cheio btn-lavanda" onclick="abrirExercicio()">Registrar treino</button>`;
   } else if (i.tipo === 'dormir') {
     oque = 'Feche o dia quando estiver deitada — o app guarda a hora.';
-    acoes = `<button class="btn btn-cheio btn-ceu" onclick="abrirSono()">Vou dormir</button>`;
+    acoes = `<button class="btn btn-cheio" style="background:var(--tinta-dim);color:#fff" onclick="abrirSono()">Vou dormir</button>`;
+  } else if (i.tipo === 'jejum') {
+    oque = 'Água pura, antes do café e de qualquer outra coisa.';
+    acoes = `<button class="btn btn-cheio btn-ceu" onclick="abrirJejum()">Bebi em jejum</button>`;
   } else {
     const etapa = etapaSessao(i.ref);
     oque = etapa === 'chegada'
@@ -271,12 +286,105 @@ function fimDoDiaHTML(itens, nota) {
 
 // ── Roteamento do toque num nó ───────────────────────────────────
 function abrirItem(tipo, id) {
+  if (tipo === 'jejum')          return abrirJejum();
   if (tipo === 'refeicao')       return abrirRefeicao(id);
   if (tipo === 'refeicao-extra') return abrirRefeicaoExtra(id);
   if (tipo === 'remedio')        return abrirMedicamento(id);
   if (tipo === 'treino')         return abrirExercicio();
   if (tipo === 'dormir')         return abrirSono();
   return abrirSessao(id);
+}
+
+// ══ ÁGUA EM JEJUM ══════════════════════════════════════════════
+// Primeira coisa do dia. Não vira registro próprio: grava direto em `logAgua`
+// com origem 'jejum', então já soma no contador sozinha — pedir pra ela marcar
+// a mesma água duas vezes seria o tipo de atrito que faz largar o app.
+// Fora da nota de propósito (ela já pontua pela água), igual ao Dormir.
+
+let jejumMl = 300;
+const JEJUM_OPCOES = [200, 300, 500];
+
+function abrirJejum() {
+  const log = jejumDoDia(hoje());
+  jejumMl = log ? log.ml : (perfil().mlJejum || 300);
+
+  abrirSheet('<div class="sheet-alca"></div><div id="jejum-cx"></div>', () => RENDER.hoje());
+  renderJejum();
+}
+
+function renderJejum() {
+  const cx = document.getElementById('jejum-cx');
+  if (!cx) return;
+  const log = jejumDoDia(hoje());
+  const total = aguaDoDia(hoje());
+
+  cx.innerHTML = `
+    <div class="sheet-cabeca">
+      <div style="flex:1;min-width:0">
+        <h2>Água em jejum</h2>
+        <div class="dica">${log ? `Você registrou ${esc(String(log.ml))} ml às ${esc(log.hora)}.`
+                               : 'Água pura, antes de comer qualquer coisa.'}</div>
+      </div>
+      <button class="sheet-x" onclick="fecharSheet()" aria-label="Fechar">✕</button>
+    </div>
+
+    <div class="sheet-corpo">
+      <div class="grupo">
+        <div class="grupo-topo">
+          <span class="grupo-nome">Quanto você bebeu</span>
+          <span class="grupo-cont num">${jejumMl} ml</span>
+        </div>
+        <div class="chips" style="margin-bottom:12px">
+          ${JEJUM_OPCOES.map(ml => `<button class="chip ${jejumMl === ml ? 'on' : ''}"
+              onclick="definirJejum(${ml})">${ml} ml</button>`).join('')}
+        </div>
+        <div class="stepper" style="width:fit-content">
+          <button onclick="definirJejum(${jejumMl - 50})" aria-label="Diminuir">−</button>
+          <span class="stepper-v num">${jejumMl} ml</span>
+          <button onclick="definirJejum(${jejumMl + 50})" aria-label="Aumentar">+</button>
+        </div>
+      </div>
+      <p class="sono-obs" style="text-align:left;padding:0">
+        Isso já entra na conta de água do dia${log ? '' : ` — hoje você está em ${esc(fmt.litros(total))}`}.
+        Não precisa marcar de novo no card lá em cima.
+      </p>
+    </div>
+
+    <div class="sheet-pe">
+      <button class="btn btn-cheio btn-ceu" style="width:100%" onclick="confirmarJejum()">
+        ${log ? `Salvar ${jejumMl} ml` : `Bebi ${jejumMl} ml em jejum`}
+      </button>
+      ${log ? `<button class="link-fraco" onclick="desmarcarJejum()">Desmarcar</button>` : ''}
+    </div>`;
+}
+
+function definirJejum(ml) {
+  jejumMl = Math.max(50, Math.min(2000, Math.round(ml / 50) * 50));
+  renderJejum();
+}
+
+function confirmarJejum() {
+  const data = hoje();
+  const logs = (DB.get('logAgua') || []).filter(l => !(l.data === data && l.origem === 'jejum'));
+  logs.push({ id: uid(), data, hora: horaLocal(), ml: jejumMl, origem: 'jejum' });
+  DB.set('logAgua', logs);
+
+  // Guarda o quanto ela costuma beber: amanhã o sheet já abre certo, num toque.
+  const p = perfil();
+  p.mlJejum = jejumMl;
+  DB.set('perfil', p);
+
+  fecharSheet();
+  toast(`${jejumMl} ml em jejum · já entrou na conta do dia`);
+  checarConquistas();
+  RENDER.hoje();
+}
+
+function desmarcarJejum() {
+  DB.set('logAgua', (DB.get('logAgua') || [])
+    .filter(l => !(l.data === hoje() && l.origem === 'jejum')));
+  fecharSheet();
+  RENDER.hoje();
 }
 
 // ══ SONO ═══════════════════════════════════════════════════════
@@ -381,6 +489,9 @@ function renderAgua() {
   }).join('');
 
   // A clínica pediu de 3 a 4 L: a meta é o piso, o ideal é o alvo do dia bom.
+  // Deixa claro que o jejum já contou aqui — senão ela marca de novo no +200
+  // e o dia fica com água que não existiu.
+  const jejum = jejumDoDia(data);
   const ideal = perfil().metaAguaIdeal;
   let recado = '';
   if (ideal && total >= ideal)      recado = `<span class="agua-extra ouro">Chegou nos ${esc(fmt.litros(ideal))} — o topo do que a clínica pediu ✨</span>`;
@@ -394,6 +505,7 @@ function renderAgua() {
         <span class="agua-val num">${esc(fmt.litros(total))} <small>de ${esc(fmt.litros(meta))}</small></span>
       </div>
       <div class="copos">${copos}</div>
+      ${jejum ? `<span class="agua-extra">${esc(String(jejum.ml))} ml em jejum já entraram nesta conta.</span>` : ''}
       ${recado}
       <div class="agua-btns">
         ${AGUA_BOTOES.map(ml => `<button onclick="beberAgua(${ml})">+${ml >= 1000 ? '1L' : ml}</button>`).join('')}
