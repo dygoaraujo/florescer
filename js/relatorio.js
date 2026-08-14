@@ -7,8 +7,9 @@
 /** Horário de corte: a última refeição do plano no sábado (ou 20:00). */
 function horaCorteRelatorio() {
   const d = dietaAtiva();
-  if (!d || !d.refeicoes.length) return '20:00';
-  return d.refeicoes.reduce((max, r) => (minutosDe(r.hora) > minutosDe(max) ? r.hora : max), '00:00');
+  const refs = refeicoesAtivas(d);
+  if (!refs.length) return '20:00';
+  return refs.reduce((max, r) => (minutosDe(r.hora) > minutosDe(max) ? r.hora : max), '00:00');
 }
 
 /** A semana que começa em `ini` (segunda) já pode ser fechada? */
@@ -28,15 +29,6 @@ function diasDaSemana(ini) {
 function pesoAte(data) {
   const ps = pesosOrdenados().filter(p => p.data <= data);
   return ps.length ? ps[ps.length - 1].peso : null;
-}
-
-// O registro guarda a hora REAL e a hora do plano. Mais de 1h30 de diferença
-// deixou de ser "quase na hora" — é o espaçamento entre refeições saindo do lugar.
-const TOLERANCIA_HORARIO = 90;
-
-function foraDoHorario(l) {
-  if (l.status !== 'feita' || !l.horaPlanejada) return false;
-  return Math.abs(minutosDe(l.hora) - minutosDe(l.horaPlanejada)) > TOLERANCIA_HORARIO;
 }
 
 /** Média de horários noturnos (23:40 e 00:20 dão 00:00, não meio-dia). */
@@ -67,11 +59,14 @@ function dadosSemana(ini) {
   const dieta = dietaAtiva();
   const metaAgua = perfil().metaAgua || 3000;
 
-  const logR = (DB.get('logRefeicoes') || []).filter(l => dias.includes(l.data));
+  // Só as refeições do plano ativo entram na adesão — extra é bônus (conta no
+  // dia, não nesta estatística) e log perdido de refeição pausada não entra.
+  const idsAtivos = new Set(refeicoesAtivas(dieta).map(r => r.id));
+  const logR = (DB.get('logRefeicoes') || []).filter(l => dias.includes(l.data) && idsAtivos.has(l.refeicaoId));
   const logM = (DB.get('logMedicamentos') || []).filter(l => dias.includes(l.data));
   const logE = (DB.get('logExercicios') || []).filter(l => dias.includes(l.data));
 
-  const refsEsperadas = (dieta ? dieta.refeicoes.length : 0) * dias.length;
+  const refsEsperadas = idsAtivos.size * dias.length;
   const medsEsperados = dias.reduce((s, d) => s + medsDoDia(d).length, 0);
   const aguaTotal = dias.reduce((s, d) => s + aguaDoDia(d), 0);
 
@@ -84,7 +79,6 @@ function dadosSemana(ini) {
     refeicoesFeitas: logR.filter(l => l.status === 'feita').length,
     refeicoesPuladas: logR.filter(l => l.status === 'pulada').length,
     refeicoesIncompletas: logR.filter(l => l.status === 'feita' && l.completa === false).length,
-    refeicoesForaDoHorario: logR.filter(foraDoHorario).length,
     faltasComuns: maisFaltou(logR),
     horaSonoMedia: mediaDeHorario((DB.get('logSono') || []).filter(l => dias.includes(l.data)).map(l => l.hora)),
     refeicoesEsperadas: refsEsperadas,
@@ -273,8 +267,6 @@ function abrirRelatorio(ini) {
               r.refeicoesFeitas, ant?.refeicoesFeitas, false)}
       ${r.refeicoesPuladas ? linha('Refeições puladas', String(r.refeicoesPuladas), r.refeicoesPuladas, ant?.refeicoesPuladas, true) : ''}
       ${r.refeicoesIncompletas ? linha('Refeições incompletas', String(r.refeicoesIncompletas), r.refeicoesIncompletas, ant?.refeicoesIncompletas, true) : ''}
-      ${r.refeicoesForaDoHorario ? linha('Fora do horário', `${r.refeicoesForaDoHorario} refeições`,
-              r.refeicoesForaDoHorario, ant?.refeicoesForaDoHorario, true) : ''}
       ${r.horaSonoMedia ? linha('Foi dormir, em média', r.horaSonoMedia, null, null, false) : ''}
       ${(r.faltasComuns || []).length ? `<p style="font-size:13px;color:var(--tinta-dim);padding:10px 0 0;line-height:1.6">
         O que mais faltou no prato: ${esc(fmt.lista(r.faltasComuns.map(f => `${f.nome} (${f.vezes}×)`)))}.</p>` : ''}

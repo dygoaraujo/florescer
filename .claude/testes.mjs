@@ -497,12 +497,26 @@ console.log('\n── Mínimo, teto e itens obrigatórios ───────'
 console.log('\n── Horário real e sono ─────────────────────');
 {
   const ctx = novoSandbox();
-  eq('no horário não conta como fora',
-     run(ctx, "foraDoHorario({status:'feita', hora:'12:50', horaPlanejada:'12:30'})"), false);
-  eq('2h depois conta',
-     run(ctx, "foraDoHorario({status:'feita', hora:'14:40', horaPlanejada:'12:30'})"), true);
-  eq('refeição pulada não entra na conta',
-     run(ctx, "foraDoHorario({status:'pulada', hora:'20:00', horaPlanejada:'12:30'})"), true === false);
+
+  // Refeição não tem horário fixo: abre com a hora de agora e é ajustável,
+  // igual ao sono — e é essa hora ajustada que fica gravada no registro.
+  run(ctx, "abrirRefeicao('r-cafe'); horaConfirmacao = '07:10';");
+  eq('confirmar às abre com uma hora e é ajustável',
+     run(ctx, "mudarHoraConfirmacao(15); horaConfirmacao"), '07:25');
+  run(ctx, `
+    const c = dietaAtiva().refeicoes[0];
+    c.grupos.forEach(g => escolher(g.id, g.opcoes[0].id));
+    horaConfirmacao = '08:05';
+    confirmarRefeicao();
+  `);
+  eq('o registro guarda a hora ajustada, não a de referência do plano',
+     run(ctx, "DB.get('logRefeicoes').find(l => l.refeicaoId === 'r-cafe').hora"), '08:05');
+  eq('refeição pendente não mostra horário nenhum', run(ctx, `
+    horaVisivel(itensDoDia(hoje()).find(i => i.tipo === 'refeicao' && i.estado === 'pendente'));
+  `), '');
+  eq('refeição feita mostra a hora real registrada', run(ctx, `
+    horaVisivel(itensDoDia(hoje()).find(i => i.tipo === 'refeicao' && i.estado === 'feito'));
+  `), '08:05');
 
   eq('média de horários da noite', run(ctx, "mediaDeHorario(['23:00','23:30','00:30'])"), '23:40');
   eq('média com um só', run(ctx, "mediaDeHorario(['22:15'])"), '22:15');
@@ -552,12 +566,12 @@ console.log('\n── Horários para os alarmes ──────────�
   const linhas = run(ctx, 'horariosDoDia()');
   eq('sai em ordem de horário',
      linhas.map(l => l.hora).join(' ') === linhas.map(l => l.hora).slice().sort().join(' '), true);
-  eq('inclui refeições, medicamentos, treino e sono', [
+  eq('inclui medicamentos, treino e sono — refeição não tem horário fixo, não entra', [
     linhas.some(l => l.o === 'Café da manhã'),
     linhas.some(l => /Tintura de coentro/.test(l.o)),
     linhas.some(l => l.o === 'Exercício'),
     linhas.some(l => l.o === 'Dormir'),
-  ], [true, true, true, true]);
+  ], [false, true, true, true]);
   eq('medicamento pausado fica de fora', run(ctx, `
     const m = DB.get('medicamentos'); m[0].ativo = false; DB.set('medicamentos', m);
     horariosDoDia().some(l => l.o.startsWith(m[0].nome));
@@ -702,6 +716,98 @@ console.log('\n── Curva de peso ──────────────�
   eq('mas só a de casa pode ser removida ali', run(ctx, `
     (pesagensCasaHTML().match(/removerPeso/g) || []).length;
   `), 1);
+}
+
+console.log('\n── Refeições pausadas (lanche da manhã e ceia) ─');
+{
+  const ctx = novoSandbox();
+  eq('r-lm e r-ceia nascem pausadas', run(ctx, `
+    const d = dietaAtiva();
+    [d.refeicoes.find(r=>r.id==='r-lm').pausada, d.refeicoes.find(r=>r.id==='r-ceia').pausada];
+  `), [true, true]);
+  eq('as outras 4 continuam ativas', run(ctx, `
+    refeicoesAtivas(dietaAtiva()).map(r => r.id);
+  `), ['r-cafe', 'r-almoco', 'r-lt', 'r-jantar']);
+  eq('pausada some do fio do dia', run(ctx, `
+    itensDoDia(hoje()).some(i => i.id === 'r-lm' || i.id === 'r-ceia');
+  `), false);
+  eq('pausada some da tela de comida hoje', run(ctx, `
+    comidaHojeHTML().includes('Lanche da manhã');
+  `), false);
+  eq('mas continua no plano, marcada como pausada', run(ctx, `
+    comidaPlanoHTML().includes('Lanche da manhã') && comidaPlanoHTML().includes('Ceia');
+  `), true);
+  eq('reativar traz de volta pro fio', run(ctx, `
+    editarRefeicao('r-lm'); alternarPausaRefeicao(); fecharSheet();
+    itensDoDia(hoje()).some(i => i.id === 'r-lm');
+  `), true);
+}
+
+console.log('\n── Kiwi no catálogo de frutas ──────────────');
+{
+  const ctx = novoSandbox();
+  eq('kiwi está nas opções de fruta do café', run(ctx, `
+    dietaAtiva().refeicoes[0].grupos.find(g => g.id === 'g-cafe-carbo').opcoes.some(o => o.nome === 'Kiwi');
+  `), true);
+  eq('porção de 1 unidade', run(ctx, `
+    medidaTexto(dietaAtiva().refeicoes[0].grupos.find(g => g.id === 'g-cafe-carbo').opcoes.find(o => o.nome === 'Kiwi').medida);
+  `), '1 un');
+}
+
+console.log('\n── Refeição extra ───────────────────────────');
+{
+  const ctx = novoSandbox();
+  run(ctx, `
+    abrirRefeicaoExtra();
+    escolherExtra('x-fruta', idDe('Kiwi'));
+    escolherExtra('x-cha', idDe('Camomila'));
+    horaExtra = '16:20';
+    confirmarExtra();
+  `);
+  const log = run(ctx, "DB.get('logRefeicoes').find(l => l.extra)");
+  eq('nasce como registro feito, com a hora marcada', [log.status, log.hora, log.extra], ['feita', '16:20', true]);
+  eq('guarda as categorias escolhidas', log.escolhas.map(e => e.grupoNome).sort(),
+     ['Chá ou bebida', 'Fruta']);
+  eq('entra no fio do dia, já feita', run(ctx, `
+    const i = itensDoDia(hoje()).find(x => x.tipo === 'refeicao-extra');
+    [i.estado, i.hora, i.nome];
+  `), ['feito', '16:20', 'Refeição extra']);
+  eq('aparece na tela de comida de hoje', run(ctx, `
+    comidaHojeHTML().includes('Refeição extra');
+  `), true);
+  eq('só escrever uma observação também vale', run(ctx, `
+    abrirRefeicaoExtra();
+    obsExtra = 'um pedaço de bolo';
+    confirmarExtra();
+    DB.get('logRefeicoes').filter(l => l.extra).length;
+  `), 2);
+
+  // Reabrir um registro extra pra editar ou remover
+  run(ctx, `
+    const id = DB.get('logRefeicoes').find(l => l.extra && l.hora === '16:20').id;
+    abrirRefeicaoExtra(id);
+    removerExtra();
+  `);
+  eq('remover tira só aquele registro', run(ctx, `
+    DB.get('logRefeicoes').filter(l => l.extra).length;
+  `), 1);
+}
+
+console.log('\n── Histórico de treino ──────────────────────');
+{
+  const ctx = novoSandbox();
+  run(ctx, `
+    DB.set('logExercicios', [
+      {id:'e1',data:hoje(),tipo:'Caminhada',duracao:45,hora:'18:10',obs:''},
+      {id:'e2',data:somaDias(hoje(),-2),tipo:'Pilates',duracao:60,hora:'07:30',obs:''},
+    ]);
+  `);
+  eq('lista os dois treinos, mais recente primeiro', run(ctx, `
+    treinoHistoricoHTML().indexOf('Caminhada') < treinoHistoricoHTML().indexOf('Pilates');
+  `), true);
+  eq('mostra a duração formatada', run(ctx, `
+    treinoHistoricoHTML().includes('1h00') && treinoHistoricoHTML().includes('45 min');
+  `), true);
 }
 
 console.log(`\n${falhou ? '✗' : '✓'} ${ok} passaram, ${falhou} falharam\n`);

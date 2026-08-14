@@ -59,6 +59,7 @@
   --col: 520px;               /* o app é uma coluna de celular, e assume isso */
   --tabbar: 64px;
   --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-t: env(safe-area-inset-top, 0px);
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -117,7 +118,9 @@ input, select, textarea { font-size: 16px; }   /* < 16px faz o iOS dar zoom no f
 #app {
   max-width: var(--col);
   margin: 0 auto;
-  padding: 0 18px calc(var(--tabbar) + var(--safe-b) + 26px);
+  /* Em standalone no iPhone o relógio/status bar fica por cima do conteúdo
+     (viewport-fit=cover) — sem essa folga o topo da tela nasce atrás dele. */
+  padding: calc(var(--safe-t) + 14px) 18px calc(var(--tabbar) + var(--safe-b) + 26px);
   min-height: 100vh;
 }
 
@@ -1289,6 +1292,23 @@ button.cal-d:active { background: var(--bruma); transform: scale(.92); }
   color: var(--tinta-dim);
   padding: 0 12px 6px;
 }
+
+/* Hora real do registro — sem promessa de horário, só o carimbo ajustável */
+.hora-registro {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin: 4px 0 12px;
+}
+.hora-registro-lbl { font-size: 12.5px; color: var(--tinta-dim); }
+.hora-registro-v {
+  font-weight: 700;
+  color: var(--tinta);
+  min-width: 46px;
+  text-align: center;
+}
+.peso-btn-sm { width: 32px; height: 32px; font-size: 16px; border-radius: 9px; }
 
 .linha-peso {
   display: flex;

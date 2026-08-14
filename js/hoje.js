@@ -13,7 +13,10 @@ function itensDoDia(data) {
   const itens = [];
   const dieta = dietaAtiva();
 
-  if (dieta) dieta.refeicoes.forEach(r => itens.push({
+  // Sem horário fixo: `hora` aqui é só posição interna no dia (a ordem que a
+  // clínica pensou), nunca uma promessa mostrada pra ela. O horário que
+  // aparece de verdade é o que ela registrou na hora que confirmou.
+  if (dieta) refeicoesAtivas(dieta).forEach(r => itens.push({
     tipo: 'refeicao', id: r.id, hora: r.hora, nome: r.nome, ref: r,
   }));
 
@@ -27,6 +30,13 @@ function itensDoDia(data) {
 
   (DB.get('sessoes') || []).filter(s => s.data === data).forEach(s => itens.push({
     tipo: 'sessao', id: s.id, hora: s.hora || '09:00', nome: 'Sessão na clínica', ref: s,
+  }));
+
+  // Refeições extras registradas neste dia — nascem prontas, na hora real
+  // que ela marcou, e entram no fio na posição que essa hora ocupa.
+  (DB.get('logRefeicoes') || []).filter(l => l.data === data && l.extra).forEach(l => itens.push({
+    tipo: 'refeicao-extra', id: l.id, hora: l.hora, nome: l.refeicaoNome || 'Refeição extra',
+    estado: 'feito', log: l,
   }));
 
   // Último item do dia: ela dá o check quando deita, e o app carimba a hora.
@@ -45,6 +55,8 @@ function itensDoDia(data) {
       const l = logR.find(x => x.refeicaoId === i.id);
       i.estado = l ? (l.status === 'pulada' ? 'pulado' : 'feito') : 'pendente';
       i.log = l || null;
+    } else if (i.tipo === 'refeicao-extra') {
+      // já vem pronta lá em cima
     } else if (i.tipo === 'remedio') {
       i.log = logM.find(x => x.medId === i.id) || null;
       i.estado = i.log ? 'feito' : 'pendente';
@@ -91,6 +103,8 @@ RENDER.hoje = function () {
       ${itens.map(i => noHTML(i, ativo && i === ativo)).join('')}
     </div>
 
+    <button class="btn btn-vazio btn-sm" style="width:100%;margin-top:14px" onclick="abrirRefeicaoExtra()">${IC.mais} Refeição extra</button>
+
     ${ativo ? '' : fimDoDiaHTML(itens, nota)}
   `;
 
@@ -119,7 +133,7 @@ if (document.fonts && document.fonts.ready) {
 // e nos remédios ele diferencia gota de cápsula, que é o que ela precisa saber
 // antes de abrir qualquer coisa.
 function iconeItem(i) {
-  if (i.tipo === 'refeicao') return IC.refeicao;
+  if (i.tipo === 'refeicao' || i.tipo === 'refeicao-extra') return IC.refeicao;
   if (i.tipo === 'treino')   return IC.treino;
   if (i.tipo === 'sessao')   return IC.sessao;
   if (i.tipo === 'dormir')   return IC.lua;
@@ -136,6 +150,13 @@ function corDoItem(i) {
   return 'cat-refeicao';
 }
 
+/** Sem horário fixo, a refeição só mostra hora depois de registrada — e é a
+ *  hora REAL que ela confirmou, nunca a de referência do plano. */
+function horaVisivel(i) {
+  if (i.tipo === 'refeicao') return i.log ? i.log.hora : '';
+  return i.hora;
+}
+
 function noHTML(i, ativo) {
   if (ativo) return cardAgoraHTML(i);
 
@@ -144,10 +165,11 @@ function noHTML(i, ativo) {
   const marca = i.estado === 'feito' ? IC.check
               : i.estado === 'pulado' ? '<span style="font-size:13px">—</span>'
               : '';
+  const hora = horaVisivel(i);
   return `
     <div class="${cls}">
       <button class="no-linha" onclick="abrirItem('${i.tipo}','${esc(i.id)}')">
-        <span class="no-hora num">${esc(i.hora)}</span>
+        <span class="no-hora num">${esc(hora)}</span>
         <span class="no-cat">${iconeItem(i)}</span>
         <span class="no-nome">${esc(i.nome)}</span>
         <span class="no-ic">${marca}</span>
@@ -157,8 +179,10 @@ function noHTML(i, ativo) {
 
 // ── O card grande: a próxima coisa a fazer ───────────────────────
 function cardAgoraHTML(i) {
+  // Refeição não tem hora marcada — não existe "passou da hora" pra ela.
+  const semHorario = i.tipo === 'refeicao';
   const agora = minutosDe(horaLocal());
-  const atrasado = minutosDe(i.hora) < agora - 20;
+  const atrasado = !semHorario && minutosDe(i.hora) < agora - 20;
 
   let oque = '', acoes = '';
 
@@ -189,7 +213,7 @@ function cardAgoraHTML(i) {
         <div class="quando">
           <span class="quando-ic">${iconeItem(i)}</span>
           <span>${atrasado ? 'Passou da hora' : 'Agora'}</span>
-          <span class="h">· ${esc(i.hora)}</span>
+          ${semHorario ? '' : `<span class="h">· ${esc(i.hora)}</span>`}
         </div>
         <h3>${esc(i.nome)}</h3>
         ${oque ? `<p class="oque">${esc(oque)}</p>` : ''}
@@ -237,10 +261,11 @@ function fimDoDiaHTML(itens, nota) {
 
 // ── Roteamento do toque num nó ───────────────────────────────────
 function abrirItem(tipo, id) {
-  if (tipo === 'refeicao') return abrirRefeicao(id);
-  if (tipo === 'remedio')  return abrirMedicamento(id);
-  if (tipo === 'treino')   return abrirExercicio();
-  if (tipo === 'dormir')   return abrirSono();
+  if (tipo === 'refeicao')       return abrirRefeicao(id);
+  if (tipo === 'refeicao-extra') return abrirRefeicaoExtra(id);
+  if (tipo === 'remedio')        return abrirMedicamento(id);
+  if (tipo === 'treino')         return abrirExercicio();
+  if (tipo === 'dormir')         return abrirSono();
   return abrirSessao(id);
 }
 
@@ -414,6 +439,7 @@ let sel = {};              // { grupoId: [{opcaoId, nome, medida}] }
 let refAtual = null;
 let buscaGrupo = {};       // { grupoId: 'texto' } — filtro dos grupos grandes
 let gruposAbertos = null;  // Set de grupos que ela mandou abrir de novo
+let horaConfirmacao = null; // hora REAL do registro — ajustável, não vem do plano
 
 const LIMITE_BUSCA = 12;   // a partir daqui o grupo ganha campo de busca
 
@@ -431,6 +457,7 @@ function abrirRefeicao(refeicaoId) {
 
   // Reabrir uma refeição já registrada traz as escolhas de volta pra edição.
   const log = (DB.get('logRefeicoes') || []).find(l => l.data === hoje() && l.refeicaoId === r.id);
+  horaConfirmacao = (log && log.status === 'feita') ? log.hora : horaLocal();
   if (log && log.status === 'feita') {
     (log.escolhas || []).forEach(e => {
       const g = r.grupos.find(x => x.id === e.grupoId);
@@ -530,7 +557,13 @@ function renderFimGrupos() {
     ${total && faltando.length ? `<div class="aviso-falta">
         Falta ${esc(fmt.lista(faltando.map(nomeCheio)))}. Pode confirmar assim mesmo —
         o relatório registra o que ficou de fora.</div>` : ''}
-    <button class="btn btn-cheio" style="width:100%;margin-top:12px" onclick="confirmarRefeicao()"
+    ${total ? `<div class="hora-registro">
+      <span class="hora-registro-lbl">${jaFeita ? 'Registrado às' : 'Confirmar às'}</span>
+      <button class="peso-btn peso-btn-sm" onclick="mudarHoraConfirmacao(-5)" aria-label="5 minutos antes">−</button>
+      <span class="hora-registro-v num">${esc(horaConfirmacao)}</span>
+      <button class="peso-btn peso-btn-sm" onclick="mudarHoraConfirmacao(5)" aria-label="5 minutos depois">+</button>
+    </div>` : ''}
+    <button class="btn btn-cheio" style="width:100%;margin-top:4px" onclick="confirmarRefeicao()"
       ${total ? '' : 'disabled'}>
       ${jaFeita ? 'Salvar alteração' : total && faltando.length ? 'Confirmar assim mesmo' : 'Confirmar ' + esc(primeiraPalavra(refAtual.nome))}
     </button>
@@ -538,6 +571,14 @@ function renderFimGrupos() {
       ? `<button class="link-fraco" onclick="desmarcarRefeicao()">Desmarcar esta refeição</button>`
       : `<button class="link-fraco" onclick="pularRefeicao()">Não fiz esta refeição</button>`}
     <div style="height:6px"></div>`;
+}
+
+/** Ajusta a hora REAL do registro — abre já em "agora", ela corrige se
+ *  lembrou depois de já ter comido. */
+function mudarHoraConfirmacao(delta) {
+  const m = (minutosDe(horaConfirmacao) + delta + 24 * 60) % (24 * 60);
+  horaConfirmacao = `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+  renderFimGrupos();
 }
 
 /** Rola até o primeiro grupo que ainda falta — é o que a barra de baixo faz
@@ -791,7 +832,7 @@ function confirmarRefeicao() {
     dietaId: dietaAtiva().id,
     refeicaoId: refAtual.id,
     refeicaoNome: refAtual.nome,
-    hora: horaLocal(),                 // a hora REAL do registro, não a do plano
+    hora: horaConfirmacao || horaLocal(),   // a hora REAL do registro, ajustada por ela
     horaPlanejada: refAtual.hora,
     escolhas,
     completa: faltou.length === 0,
@@ -827,6 +868,161 @@ function desmarcarRefeicao() {
   const logs = (DB.get('logRefeicoes') || [])
     .filter(l => !(l.data === hoje() && l.refeicaoId === refAtual.id));
   DB.set('logRefeicoes', logs);
+  fecharSheet();
+  RENDER.hoje();
+}
+
+// ══ REFEIÇÃO EXTRA — algo fora do plano, a qualquer hora ═══════
+// Mais livre que a refeição normal: sem mínimo, sem grupo obrigatório. Ela
+// escolhe as categorias que quiser (ou nenhuma) e pode só escrever o que
+// comeu. Nasce já registrada, com a hora que ela marcar.
+let selExtra = {};              // { categoriaId: [{opcaoId, nome, medida}] }
+let obsExtra = '';
+let horaExtra = null;
+let extraEditandoId = null;     // id do log, quando reabre um já registrado
+let categoriasExtraAbertas = new Set();
+
+function abrirRefeicaoExtra(logId) {
+  extraEditandoId = logId || null;
+  selExtra = {};
+  obsExtra = '';
+  categoriasExtraAbertas = new Set();
+  GRUPOS_EXTRA.forEach(c => { selExtra[c.id] = []; });
+
+  const log = logId ? (DB.get('logRefeicoes') || []).find(l => l.id === logId) : null;
+  horaExtra = log ? log.hora : horaLocal();
+  if (log) {
+    (log.escolhas || []).forEach(e => {
+      if (e.grupoId === 'obs') { obsExtra = (e.itens[0] || {}).nome || ''; return; }
+      if (selExtra[e.grupoId]) selExtra[e.grupoId] = (e.itens || []).map(it => ({ ...it }));
+    });
+    categoriasExtraAbertas = new Set(Object.keys(selExtra).filter(k => selExtra[k].length));
+  }
+
+  abrirSheet(`
+    <div class="sheet-alca"></div>
+    <div class="sheet-cabeca">
+      <div>
+        <h2>Refeição extra</h2>
+        <div class="dica">Algo fora do plano? Registre o que lembrar.</div>
+      </div>
+      <button class="sheet-x" onclick="fecharSheet()" aria-label="Fechar">✕</button>
+    </div>
+    <div class="sheet-corpo" id="extra-corpo"></div>
+    <div class="sheet-pe" id="extra-pe"></div>
+  `, () => RENDER.hoje());
+
+  renderExtra();
+}
+
+function renderExtra() {
+  const cx = document.getElementById('extra-corpo');
+  if (!cx) return;
+
+  cx.innerHTML = `
+    ${GRUPOS_EXTRA.map(c => {
+      const escolhidos = selExtra[c.id] || [];
+      const aberta = escolhidos.length > 0 || categoriasExtraAbertas.has(c.id);
+      return `
+      <div class="grupo">
+        <button class="grupo-topo" style="width:100%;text-align:left" onclick="alternarCategoriaExtra('${c.id}')">
+          <span class="grupo-nome">${esc(c.nome)}</span>
+          <span class="grupo-cont num">${escolhidos.length ? escolhidos.length + ' escolhido' + (escolhidos.length > 1 ? 's' : '') : 'toque para abrir'}</span>
+        </button>
+        ${aberta ? `<div class="chips">${c.opcoes.map(o => {
+          const on = escolhidos.some(it => it.opcaoId === o.id);
+          return `<button class="chip ${on ? 'on' : ''}" onclick="escolherExtra('${c.id}','${esc(o.id)}')">
+            ${esc(o.nome)}${o.medida && o.medida.valor != null ? `<i class="chip-med">${esc(medidaTexto(o.medida))}</i>` : ''}
+          </button>`;
+        }).join('')}</div>` : ''}
+      </div>`;
+    }).join('')}
+
+    <div class="campo" style="margin-top:4px">
+      <label for="extra-obs">Outra coisa (opcional)</label>
+      <textarea id="extra-obs" rows="2" placeholder="Ex.: um pedaço de bolo, uma bolacha..."
+        oninput="obsExtra=this.value">${esc(obsExtra)}</textarea>
+    </div>
+
+    <div class="hora-registro">
+      <span class="hora-registro-lbl">Registrado às</span>
+      <button class="peso-btn peso-btn-sm" onclick="mudarHoraExtra(-5)" aria-label="5 minutos antes">−</button>
+      <span class="hora-registro-v num">${esc(horaExtra)}</span>
+      <button class="peso-btn peso-btn-sm" onclick="mudarHoraExtra(5)" aria-label="5 minutos depois">+</button>
+    </div>`;
+
+  renderPeExtra();
+}
+
+function alternarCategoriaExtra(catId) {
+  if (categoriasExtraAbertas.has(catId)) categoriasExtraAbertas.delete(catId);
+  else categoriasExtraAbertas.add(catId);
+  renderExtra();
+}
+
+function escolherExtra(catId, opcaoId) {
+  const c = GRUPOS_EXTRA.find(x => x.id === catId);
+  const o = c.opcoes.find(x => x.id === opcaoId);
+  const atual = selExtra[catId] || [];
+  const i = atual.findIndex(it => it.opcaoId === opcaoId);
+  if (i >= 0) atual.splice(i, 1);
+  else atual.push({ opcaoId, nome: o.nome, medida: o.medida ? { ...o.medida } : null });
+  selExtra[catId] = atual;
+  renderExtra();
+}
+
+function mudarHoraExtra(delta) {
+  const m = (minutosDe(horaExtra) + delta + 24 * 60) % (24 * 60);
+  horaExtra = `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+  renderExtra();
+}
+
+function renderPeExtra() {
+  const pe = document.getElementById('extra-pe');
+  if (!pe) return;
+  const total = Object.values(selExtra).reduce((s, a) => s + a.length, 0) + (obsExtra.trim() ? 1 : 0);
+  pe.innerHTML = `
+    <button class="btn btn-cheio" style="width:100%" onclick="confirmarExtra()" ${total ? '' : 'disabled'}>
+      ${extraEditandoId ? 'Salvar alteração' : 'Registrar refeição extra'}
+    </button>
+    ${extraEditandoId ? `<button class="link-fraco" onclick="removerExtra()">Remover este registro</button>` : ''}`;
+}
+
+function confirmarExtra() {
+  const escolhas = GRUPOS_EXTRA
+    .map(c => ({ grupoId: c.id, grupoNome: c.nome, itens: selExtra[c.id] || [] }))
+    .filter(e => e.itens.length);
+  if (obsExtra.trim()) escolhas.push({ grupoId: 'obs', grupoNome: 'Observação', itens: [{ opcaoId: 'obs', nome: obsExtra.trim(), medida: null }] });
+  if (!escolhas.length) return;
+
+  const logs = DB.get('logRefeicoes') || [];
+  const i = extraEditandoId ? logs.findIndex(l => l.id === extraEditandoId) : -1;
+  const reg = {
+    id: extraEditandoId || uid(),
+    data: hoje(),
+    dietaId: dietaAtiva() ? dietaAtiva().id : null,
+    refeicaoId: null,
+    refeicaoNome: 'Refeição extra',
+    hora: horaExtra,
+    horaPlanejada: null,
+    escolhas,
+    completa: true,
+    faltou: [],
+    status: 'feita',
+    extra: true,
+  };
+  if (i >= 0) logs[i] = reg; else logs.push(reg);
+  DB.set('logRefeicoes', logs);
+
+  fecharSheet();
+  toast('Refeição extra registrada');
+  checarConquistas();
+  RENDER.hoje();
+}
+
+function removerExtra() {
+  if (!extraEditandoId) return;
+  DB.set('logRefeicoes', (DB.get('logRefeicoes') || []).filter(l => l.id !== extraEditandoId));
   fecharSheet();
   RENDER.hoje();
 }

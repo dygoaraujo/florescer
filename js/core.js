@@ -150,7 +150,7 @@ const CATALOGO = {
       ['Banana', med(1, 'un')], ['Cajá', med(6, 'un')], ['Caqui', med(1, 'un')],
       ['Carambola', med(1, 'un')], ['Cereja', med(10, 'un')], ['Coco', med(1, 'col sopa')],
       ['Figo', med(1, 'un')], ['Goiaba', med(1, 'un')], ['Jabuticaba', med(10, 'un')],
-      ['Jaca', med(6, 'gomos')], ['Lichia', med(6, 'un')], ['Maçã', med(1, 'un')],
+      ['Jaca', med(6, 'gomos')], ['Kiwi', med(1, 'un')], ['Lichia', med(6, 'un')], ['Maçã', med(1, 'un')],
       ['Mamão', med(1, 'fatia')], ['Manga', med(0.5, 'un')], ['Mangaba', med(6, 'un')],
       ['Maracujá', med(0.5, 'un')], ['Melancia', med(1, 'fatia')], ['Melão', med(1, 'fatia')],
       ['Morango', med(6, 'un')], ['Nectarina', med(1, 'un')], ['Pequi', med(4, 'un')],
@@ -183,6 +183,18 @@ const CATALOGO = {
     ['Melão', med(1, 'fatia')], ['Maçã', med(0.5, 'un')],
   ],
 };
+
+/** Categorias soltas pra "Refeição extra" — algo fora do horário do plano.
+ *  Mesmo catálogo das refeições normais, sem mínimo/máximo: ela escolhe o
+ *  que quiser em quantas categorias quiser, ou só escreve o que comeu. */
+const GRUPOS_EXTRA = [
+  { id: 'x-prot',  nome: 'Proteína',       opcoes: opcoesPorSecao(CATALOGO.proteinas, med(150, 'g')) },
+  { id: 'x-carbo', nome: 'Carboidrato',    opcoes: opcoes(CATALOGO.grupoB, med(50, 'g')) },
+  { id: 'x-veg',   nome: 'Vegetais',       opcoes: opcoes(CATALOGO.grupoA, med(null, 'à vontade')) },
+  { id: 'x-fruta', nome: 'Fruta',          opcoes: opcoesPorSecao(CATALOGO.frutas) },
+  { id: 'x-olea',  nome: 'Oleaginosa',     opcoes: opcoesPorSecao(CATALOGO.oleaginosas) },
+  { id: 'x-cha',   nome: 'Chá ou bebida',  opcoes: opcoesPorSecao(CATALOGO.chas, med(1, 'xc')) },
+];
 
 // ── Semente ──────────────────────────────────────────────────────
 // Plano real da clínica (Planejamento alimentar avançado #1).
@@ -239,7 +251,9 @@ const SEED = {
                   .concat(opcoesPorSecao(CATALOGO.frutas)) },
       ]},
 
-      { id: 'r-lm', nome: 'Lanche da manhã', hora: '10:00', grupos: [
+      // Pausada: a nutricionista liberou e ela não estava mais fazendo.
+      // Fica no plano (editável, reativável), só sai do Hoje e da Alimentação.
+      { id: 'r-lm', nome: 'Lanche da manhã', hora: '10:00', pausada: true, grupos: [
         { id: 'g-lm-olea', nome: 'Oleaginosas', qtd: 1, selecao: 'unica',
           opcoes: opcoesPorSecao(CATALOGO.oleaginosas) },
         { id: 'g-lm-cha', nome: 'Chá', qtd: 1, selecao: 'unica',
@@ -272,7 +286,7 @@ const SEED = {
           opcoes: opcoesPorSecao(CATALOGO.proteinas, med(150, 'g')) },
       ]},
 
-      { id: 'r-ceia', nome: 'Ceia', hora: '21:30', grupos: [
+      { id: 'r-ceia', nome: 'Ceia', hora: '21:30', pausada: true, grupos: [
         { id: 'g-ceia', nome: 'Opção da ceia', qtd: 1, selecao: 'unica',
           opcoes: opcoes([['Suco de uva integral', med(150, 'ml')],
                           ['Gelatina zero açúcar', med(150, 'ml')],
@@ -306,7 +320,7 @@ const SEED = {
 // medicamento novo). É o que faz a mudança chegar em quem já abriu o app —
 // sem isso o iniciarDB() só semeia chave que ainda não existe, e o aparelho
 // fica preso no plano antigo pra sempre.
-const SEED_VERSAO = 6;
+const SEED_VERSAO = 7;
 const ID_DIETA_CLINICA = 'dieta-clinica-v' + SEED_VERSAO;
 
 const CHAVES_DADOS = [
@@ -383,6 +397,10 @@ const perfil     = () => DB.get('perfil') || SEED.perfil;
 const dietaAtiva = () => (DB.get('dietas') || []).find(d => d.ativa) || null;
 const hoje       = () => dataLocal();
 
+/** Refeições em uso de verdade — as pausadas (ex.: lanche da manhã, ceia)
+ *  continuam no plano pra reativar, mas somem do dia a dia. */
+const refeicoesAtivas = dieta => (dieta ? dieta.refeicoes.filter(r => !r.pausada) : []);
+
 /** Medicamentos que valem para uma data (respeitando frequência). */
 function medsDoDia(data) {
   const dow = deData(data).getDay();
@@ -406,11 +424,15 @@ const aguaDoDia = data => (DB.get('logAgua') || []).filter(l => l.data === data)
 // pra perder ponto por não treinar num dia de descanso.
 function notaDoDia(data) {
   const dieta = dietaAtiva();
-  const refs  = dieta ? dieta.refeicoes : [];
+  const refs  = refeicoesAtivas(dieta);
   const meds  = medsDoDia(data);
   const treina = ehDiaDeTreino(data);
 
-  const logR = (DB.get('logRefeicoes') || []).filter(l => l.data === data && l.status === 'feita');
+  // Só conta pra nota o que ainda está ativo — um log perdido de refeição
+  // pausada (ou uma refeição extra, sem refeicaoId) não infla o placar.
+  const idsAtivos = new Set(refs.map(r => r.id));
+  const logR = (DB.get('logRefeicoes') || [])
+    .filter(l => l.data === data && l.status === 'feita' && idsAtivos.has(l.refeicaoId));
   const logM = (DB.get('logMedicamentos') || []).filter(l => l.data === data);
   const logE = (DB.get('logExercicios') || []).filter(l => l.data === data);
 

@@ -26,10 +26,9 @@ RENDER.ajustes = function () {
       ${dieta ? dieta.refeicoes.map(r => `
         <button class="lista-item" onclick="editarRefeicao('${esc(r.id)}')">
           <span class="li-txt">
-            <span class="li-nome">${esc(r.nome)}</span>
+            <span class="li-nome">${esc(r.nome)}${r.pausada ? ' <span class="pill">pausada</span>' : ''}</span>
             <span class="li-sub">${esc(r.grupos.map(g => g.nome).join(' · ')) || 'sem grupos'}</span>
           </span>
-          <span class="li-fim">${esc(r.hora)}</span>
           <span style="color:var(--tinta-fraca)">${IC.seta}</span>
         </button>`).join('') : '<div class="vazio">Nenhum plano cadastrado.</div>'}
       <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
@@ -304,9 +303,19 @@ function renderEditorRefeicao() {
           <input id="er-nome" type="text" value="${esc(r.nome)}" onchange="campoRefeicao('nome', this.value)">
         </div>
         <div class="campo">
-          <label for="er-hora">Horário</label>
+          <label for="er-hora">Ordem no dia</label>
           <input id="er-hora" type="time" value="${esc(r.hora)}" onchange="campoRefeicao('hora', this.value)">
         </div>
+      </div>
+      <p style="font-size:12px;color:var(--tinta-fraca);line-height:1.5;margin:-6px 0 14px">
+        Só define a posição dela no dia — ela nunca vê esse horário. O que aparece pra ela
+        é a hora real que confirmar a refeição.</p>
+
+      <div class="campo">
+        <button class="btn btn-vazio btn-sm" onclick="alternarPausaRefeicao()">
+          ${r.pausada ? 'Reativar esta refeição' : 'Pausar esta refeição'}
+        </button>
+        ${r.pausada ? '<p style="font-size:12px;color:var(--tinta-fraca);margin-top:6px">Fica fora do dia a dia dela, mas continua aqui pra reativar quando quiser.</p>' : ''}
       </div>
 
       ${r.grupos.map((g, gi) => `
@@ -344,6 +353,10 @@ function renderEditorRefeicao() {
 
 function campoRefeicao(campo, valor) {
   mexerNaRefeicao(r => { r[campo] = valor; }, { semRender: true });
+}
+
+function alternarPausaRefeicao() {
+  mexerNaRefeicao(r => { r.pausada = !r.pausada; });
 }
 
 function campoGrupo(gi, campo, valor) {
@@ -588,9 +601,9 @@ function removerMedicamento(id) {
 // de push, e nem assim é confiável). Em vez de fingir que dá, o app entrega a
 // lista pronta pra ela cadastrar de uma vez no Relógio.
 function horariosDoDia() {
+  // As refeições não têm mais horário marcado — não têm alarme. Só entra aqui
+  // o que é mesmo um compromisso de horário: remédio, exercício, dormir.
   const linhas = [];
-  const dieta = dietaAtiva();
-  if (dieta) dieta.refeicoes.forEach(r => linhas.push({ hora: r.hora, o: r.nome }));
   (DB.get('medicamentos') || []).filter(m => m.ativo)
     .forEach(m => linhas.push({ hora: m.hora, o: `${m.nome}${m.dose ? ' — ' + m.dose : ''}` }));
   const p = perfil();

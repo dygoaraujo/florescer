@@ -3,7 +3,7 @@
    Registrar é sempre pela tela Hoje — por isso nada aqui salva nada.
    ════════════════════════════════════════════════════════════════ */
 
-let vistaComida = 'hoje';   // hoje | historico | plano
+let vistaComida = 'hoje';   // hoje | historico | treino | plano
 
 RENDER.alimentacao = function () {
   const dieta = dietaAtiva();
@@ -17,7 +17,7 @@ RENDER.alimentacao = function () {
     </header>
 
     <div class="chips" style="margin-bottom:18px">
-      ${[['hoje', 'Hoje'], ['historico', 'Histórico'], ['plano', 'Meu plano']].map(([v, l]) =>
+      ${[['hoje', 'Hoje'], ['historico', 'Histórico'], ['treino', 'Treino'], ['plano', 'Meu plano']].map(([v, l]) =>
         `<button class="chip ${vistaComida === v ? 'on' : ''}" onclick="verComida('${v}')">${l}</button>`).join('')}
     </div>
 
@@ -27,6 +27,7 @@ RENDER.alimentacao = function () {
   const cx = document.getElementById('comida-corpo');
   cx.innerHTML = vistaComida === 'hoje'      ? comidaHojeHTML()
                : vistaComida === 'historico' ? comidaHistoricoHTML()
+               : vistaComida === 'treino'    ? treinoHistoricoHTML()
                :                               comidaPlanoHTML();
 };
 
@@ -107,9 +108,10 @@ function comidaHojeHTML() {
   if (!dieta) return `<div class="vazio"><span class="flor">🌱</span>Cadastre o plano alimentar em Ajustes.</div>`;
 
   const logs = (DB.get('logRefeicoes') || []).filter(l => l.data === hoje());
+  const extras = logs.filter(l => l.extra);
 
   return `<div class="cartao">
-    ${dieta.refeicoes.map(r => {
+    ${refeicoesAtivas(dieta).map(r => {
       const l = logs.find(x => x.refeicaoId === r.id);
       const feita = l && l.status === 'feita';
       const marca = !l ? `<span class="pill">a fazer</span>`
@@ -128,6 +130,13 @@ function comidaHojeHTML() {
           : `<div class="refeicao-pede">${esc(l ? 'Não foi feita.' : resumoRefeicao(r))}</div>`}
       </div>`;
     }).join('')}
+    ${extras.map(l => `<div class="refeicao-dia feita">
+        <div class="refeicao-topo">
+          <span class="refeicao-nome">${esc(l.refeicaoNome)}</span>
+          <span class="pill pill-folha">${esc(l.hora)}</span>
+        </div>
+        ${linhasEscolhaHTML(l)}
+      </div>`).join('')}
   </div>
   <p style="text-align:center;font-size:12.5px;color:var(--tinta-fraca);margin-top:16px">
     Para registrar, use a tela Hoje.</p>`;
@@ -170,15 +179,11 @@ function comidaHistoricoHTML() {
 function comidaPlanoHTML() {
   const dieta = dietaAtiva();
   if (!dieta) return `<div class="vazio"><span class="flor">🌱</span>Nenhum plano ativo.</div>`;
+  const pausadas = dieta.refeicoes.filter(r => r.pausada);
 
-  return `
-    ${dieta.obs ? `<p style="font-size:13.5px;color:var(--tinta-dim);line-height:1.6;margin-bottom:16px">${esc(dieta.obs)}</p>` : ''}
-    ${dieta.refeicoes.map(r => `
+  const cardRefeicao = r => `
       <div class="cartao">
-        <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:12px">
-          <h3 style="font-family:var(--display);font-variation-settings:'SOFT' 100,'WONK' 1,'opsz' 30;font-weight:500;font-size:17px">${esc(r.nome)}</h3>
-          <span class="li-fim" style="margin-left:auto">${esc(r.hora)}</span>
-        </div>
+        <h3 style="font-family:var(--display);font-variation-settings:'SOFT' 100,'WONK' 1,'opsz' 30;font-weight:500;font-size:17px;margin-bottom:12px">${esc(r.nome)}</h3>
         ${r.grupos.map(g => `
           <div style="margin-bottom:13px">
             <div class="grupo-topo" style="margin-bottom:7px">
@@ -187,7 +192,53 @@ function comidaPlanoHTML() {
             </div>
             <div style="font-size:14px;color:var(--tinta-dim);line-height:1.6">${esc(g.opcoes.map(o => o.nome).join(' · ')) || '—'}</div>
           </div>`).join('') || '<div style="color:var(--tinta-fraca);font-size:13.5px">sem grupos</div>'}
-      </div>`).join('')}
+      </div>`;
+
+  return `
+    ${dieta.obs ? `<p style="font-size:13.5px;color:var(--tinta-dim);line-height:1.6;margin-bottom:16px">${esc(dieta.obs)}</p>` : ''}
+    ${refeicoesAtivas(dieta).map(cardRefeicao).join('')}
+    ${pausadas.length ? `
+      <div class="sec"><h2 style="font-size:15px">Em pausa</h2><span class="sub">liberadas pela nutricionista</span></div>
+      ${pausadas.map(r => `<div style="opacity:.55">${cardRefeicao(r)}</div>`).join('')}` : ''}
     <p style="text-align:center;font-size:12.5px;color:var(--tinta-fraca);margin-top:16px">
       Para mudar o plano, vá em Ajustes.</p>`;
+}
+
+// ── Treino ───────────────────────────────────────────────────────
+function formatarDuracao(min) {
+  if (!min) return '';
+  const h = Math.floor(min / 60);
+  return h ? `${h}h${String(min % 60).padStart(2, '0')}` : `${min} min`;
+}
+
+function treinoHistoricoHTML() {
+  const logs = (DB.get('logExercicios') || []).slice().sort((a, b) => b.data.localeCompare(a.data));
+  if (!logs.length) return `<div class="vazio"><span class="flor">💪</span>Ainda não há treinos registrados.</div>`;
+
+  const semanaIni = inicioSemana(hoje());
+  const mesIni = hoje().slice(0, 7);
+  const daSemana = logs.filter(l => l.data >= semanaIni);
+  const doMes = logs.filter(l => l.data.startsWith(mesIni));
+  const bloco = (n, rot, min) => `
+    <div>
+      <div class="num" style="font-family:var(--display);font-variation-settings:'SOFT' 100,'opsz' 40;font-size:21px;font-weight:500">${n}</div>
+      <div style="font-size:11.5px;color:var(--tinta-dim);margin-top:2px">${esc(rot)}${min ? ' · ' + esc(formatarDuracao(min)) : ''}</div>
+    </div>`;
+
+  return `
+    <div class="cartao" style="display:flex;gap:24px">
+      ${bloco(daSemana.length, 'treinos esta semana', daSemana.reduce((s, l) => s + (l.duracao || 0), 0))}
+      ${bloco(doMes.length, 'treinos este mês', doMes.reduce((s, l) => s + (l.duracao || 0), 0))}
+    </div>
+    <div class="cartao">${typeof heatmapTreinos === 'function' ? heatmapTreinos() : ''}</div>
+    <div class="cartao">
+      ${logs.map(l => `
+        <div class="refeicao-dia feita">
+          <div class="refeicao-topo">
+            <span class="refeicao-nome">${esc(l.tipo)}</span>
+            <span class="pill pill-folha">${esc(l.hora || '')}</span>
+          </div>
+          <div class="refeicao-pede">${esc(fmt.maiuscula(fmt.longa(l.data)))}${l.duracao ? ` · ${formatarDuracao(l.duracao)}` : ''}</div>
+        </div>`).join('')}
+    </div>`;
 }
