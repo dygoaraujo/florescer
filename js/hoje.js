@@ -40,8 +40,8 @@ function itensDoDia(data) {
   // Refeições extras registradas neste dia — nascem prontas, na hora real
   // que ela marcou, e entram no fio na posição que essa hora ocupa.
   (DB.get('logRefeicoes') || []).filter(l => l.data === data && l.extra).forEach(l => itens.push({
-    tipo: 'refeicao-extra', id: l.id, hora: l.hora, nome: l.refeicaoNome || 'Refeição extra',
-    estado: 'feito', log: l,
+    tipo: 'refeicao-extra', id: l.id, hora: l.hora, ordem: l.ordem,
+    nome: l.refeicaoNome || 'Refeição extra', estado: 'feito', log: l,
   }));
 
   // Último item do dia: ela dá o check quando deita, e o app carimba a hora.
@@ -80,7 +80,35 @@ function itensDoDia(data) {
     }
   });
 
-  return itens.sort((a, b) => minutosDe(a.hora) - minutosDe(b.hora));
+  return itens.sort((a, b) => ordemDoItem(a) - ordemDoItem(b));
+}
+
+/** Onde o item senta no fio. Os do plano usam a `hora` interna (a ordem que a
+ *  clínica pensou). A refeição extra usa a `ordem` que ela ganhou ao ser
+ *  criada — ver `ordemParaExtra()`. Registro antigo, sem `ordem`, cai na hora. */
+function ordemDoItem(i) {
+  if (i.tipo === 'refeicao-extra' && i.ordem != null) return i.ordem;
+  return minutosDe(i.hora);
+}
+
+/** A extra entra ONDE ELA ACONTECEU NA SEQUÊNCIA DELA, não onde o relógio diz.
+ *  Comeu algo às 22h mas ainda nem tinha marcado o café? Então aconteceu antes
+ *  do café, e é ali que ela entra — senão a extra pularia pro fim do dia e a
+ *  próxima refeição pendente deixaria de ser a próxima. O relógio continua
+ *  guardado e aparece como carimbo; o que muda é só a posição. */
+function ordemParaExtra(data) {
+  const itens = itensDoDia(data);          // a nova ainda não existe aqui
+  let ultimo = -1, primeiro = 24 * 60 + 1;
+
+  itens.forEach(i => {
+    const k = ordemDoItem(i);
+    if (i.estado === 'pendente') { if (k < primeiro) primeiro = k; }
+    else if (k > ultimo) ultimo = k;
+  });
+
+  // Fora de ordem (pendente antes de coisa já feita): fica logo após o último feito
+  if (primeiro <= ultimo) return ultimo + 0.5;
+  return (ultimo + primeiro) / 2;
 }
 
 // ══ Render principal ═══════════════════════════════════════════
@@ -162,21 +190,29 @@ function corDoItem(i) {
 }
 
 /** NADA no dia tem hora marcada. O horário é sempre um carimbo do que já
- *  aconteceu: aparece depois de registrado, com a hora real.
- *  A única exceção é a sessão da clínica — ali é hora marcada de verdade,
- *  um compromisso fora de casa que ela precisa saber antes. */
+ *  aconteceu: aparece depois de registrado, com a hora real, na coluna da
+ *  esquerda. A única exceção é a sessão da clínica — ali é hora marcada de
+ *  verdade, um compromisso fora de casa que ela precisa saber antes. */
 function horaVisivel(i) {
   if (i.tipo === 'sessao') return i.hora;
   if (i.tipo === 'refeicao-extra') return i.hora;
-  // No treino o que importa é quanto, não quando: com academia de manhã e
-  // corrida à tarde, carimbar só a hora da primeira contaria meia verdade.
+  // Treinou de manhã e à tarde? A coluna mostra quando ela COMEÇOU o dia de
+  // treino; o tempo somado vai pro detalhe, à direita.
+  if (i.tipo === 'treino') {
+    const horas = (i.logs || []).map(l => l.hora).filter(Boolean).sort();
+    return horas[0] || '';
+  }
+  return i.log ? i.log.hora : '';
+}
+
+/** O "quanto", que não é horário e por isso não cabe na coluna dele. */
+function detalheItem(i) {
+  if (i.tipo === 'jejum')  return i.log ? `${i.log.ml} ml` : '';
   if (i.tipo === 'treino') {
     const min = (i.logs || []).reduce((s, l) => s + (l.duracao || 0), 0);
-    return min ? fmt.duracao(min) : (i.log ? i.log.hora : '');
+    return min ? fmt.duracao(min) : '';
   }
-  // No jejum o quanto também vale mais que o quando: a hora é sempre "ao acordar".
-  if (i.tipo === 'jejum') return i.log ? `${i.log.ml} ml` : '';
-  return i.log ? i.log.hora : '';
+  return '';
 }
 
 function noHTML(i, ativo) {
@@ -187,14 +223,15 @@ function noHTML(i, ativo) {
   const marca = i.estado === 'feito' ? IC.check
               : i.estado === 'pulado' ? '<span style="font-size:13px">—</span>'
               : '';
-  const hora = horaVisivel(i);
+  const det = detalheItem(i);
   return `
     <div class="${cls}">
       <button class="no-linha" onclick="abrirItem('${i.tipo}','${esc(i.id)}')">
+        <span class="no-hora num">${esc(horaVisivel(i))}</span>
         <span class="no-cat">${iconeItem(i)}</span>
         <span class="no-nome">${esc(i.nome)}</span>
-        ${hora ? `<span class="no-hora num">${esc(hora)}</span>` : ''}
-        <span class="no-ic" ${hora ? '' : 'style="margin-left:auto"'}>${marca}</span>
+        ${det ? `<span class="no-det">${esc(det)}</span>` : ''}
+        <span class="no-ic" ${det ? '' : 'style="margin-left:auto"'}>${marca}</span>
       </button>
     </div>`;
 }
@@ -428,12 +465,12 @@ function renderSono() {
     <div class="sheet-corpo">
       <div class="sono-relogio">
         <button class="peso-btn" onclick="ajustarSono(-5)" aria-label="5 minutos antes">−</button>
-        <span class="sono-hora num">${esc(sonoHora)}</span>
+        ${horaToqueHTML(sonoHora, 'definirSono(this.value)')}
         <button class="peso-btn" onclick="ajustarSono(5)" aria-label="5 minutos depois">+</button>
       </div>
       <p class="sono-obs">${sonoHora === agora
-        ? 'Se você já está deitada há um tempo, ajuste no − para a hora certa.'
-        : 'Ajustado. Toque em − ou + para mudar de novo.'}</p>
+        ? 'Se já faz um tempo que você deitou, toque na hora para escolher outra.'
+        : 'Ajustado. Toque na hora para escolher outra.'}</p>
     </div>
 
     <div class="sheet-pe">
@@ -447,6 +484,12 @@ function renderSono() {
 function ajustarSono(delta) {
   const m = (minutosDe(sonoHora) + delta + 24 * 60) % (24 * 60);
   sonoHora = `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+  renderSono();
+}
+
+function definirSono(v) {
+  if (!v) return;
+  sonoHora = v;
   renderSono();
 }
 
@@ -681,9 +724,7 @@ function renderFimGrupos() {
         o relatório registra o que ficou de fora.</div>` : ''}
     ${total ? `<div class="hora-registro">
       <span class="hora-registro-lbl">${jaFeita ? 'Registrado às' : 'Confirmar às'}</span>
-      <button class="peso-btn peso-btn-sm" onclick="mudarHoraConfirmacao(-5)" aria-label="5 minutos antes">−</button>
-      <span class="hora-registro-v num">${esc(horaConfirmacao)}</span>
-      <button class="peso-btn peso-btn-sm" onclick="mudarHoraConfirmacao(5)" aria-label="5 minutos depois">+</button>
+      ${horaToqueHTML(horaConfirmacao, 'definirHoraConfirmacao(this.value)')}
     </div>` : ''}
     <button class="btn btn-cheio" style="width:100%;margin-top:4px" onclick="confirmarRefeicao()"
       ${total ? '' : 'disabled'}>
@@ -695,11 +736,11 @@ function renderFimGrupos() {
     <div style="height:6px"></div>`;
 }
 
-/** Ajusta a hora REAL do registro — abre já em "agora", ela corrige se
- *  lembrou depois de já ter comido. */
-function mudarHoraConfirmacao(delta) {
-  const m = (minutosDe(horaConfirmacao) + delta + 24 * 60) % (24 * 60);
-  horaConfirmacao = `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+/** Hora REAL do registro: abre já em "agora", e o toque abre a rodinha do
+ *  iPhone se ela lembrou depois de já ter comido. */
+function definirHoraConfirmacao(v) {
+  if (!v) return;
+  horaConfirmacao = v;
   renderFimGrupos();
 }
 
@@ -1068,9 +1109,7 @@ function renderExtra() {
 
     <div class="hora-registro">
       <span class="hora-registro-lbl">Registrado às</span>
-      <button class="peso-btn peso-btn-sm" onclick="mudarHoraExtra(-5)" aria-label="5 minutos antes">−</button>
-      <span class="hora-registro-v num">${esc(horaExtra)}</span>
-      <button class="peso-btn peso-btn-sm" onclick="mudarHoraExtra(5)" aria-label="5 minutos depois">+</button>
+      ${horaToqueHTML(horaExtra, 'definirHoraExtra(this.value)')}
     </div>`;
 
   renderPeExtra();
@@ -1093,9 +1132,9 @@ function escolherExtra(catId, opcaoId) {
   renderExtra();
 }
 
-function mudarHoraExtra(delta) {
-  const m = (minutosDe(horaExtra) + delta + 24 * 60) % (24 * 60);
-  horaExtra = `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+function definirHoraExtra(v) {
+  if (!v) return;
+  horaExtra = v;
   renderExtra();
 }
 
@@ -1126,6 +1165,8 @@ function confirmarExtra() {
     refeicaoId: null,
     refeicaoNome: 'Refeição extra',
     hora: horaExtra,
+    // Editar não remexe a posição: ela já está no lugar certo da sequência.
+    ordem: i >= 0 ? logs[i].ordem : ordemParaExtra(hoje()),
     horaPlanejada: null,
     escolhas,
     completa: true,

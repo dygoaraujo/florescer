@@ -501,8 +501,10 @@ console.log('\n── Horário real e sono ────────────�
   // Refeição não tem horário fixo: abre com a hora de agora e é ajustável,
   // igual ao sono — e é essa hora ajustada que fica gravada no registro.
   run(ctx, "abrirRefeicao('r-cafe'); horaConfirmacao = '07:10';");
-  eq('confirmar às abre com uma hora e é ajustável',
-     run(ctx, "mudarHoraConfirmacao(15); horaConfirmacao"), '07:25');
+  eq('o seletor de hora manda direto o valor escolhido',
+     run(ctx, "definirHoraConfirmacao('07:25'); horaConfirmacao"), '07:25');
+  eq('cancelar o seletor (valor vazio) não zera a hora',
+     run(ctx, "definirHoraConfirmacao(''); horaConfirmacao"), '07:25');
   run(ctx, `
     const c = dietaAtiva().refeicoes[0];
     c.grupos.forEach(g => escolher(g.id, g.opcoes[0].id));
@@ -901,7 +903,7 @@ console.log('\n── Água em jejum ──────────────�
   eq('já soma no total do dia sozinho', run(ctx, "aguaDoDia(hoje())"), 400);
   eq('o item fecha e mostra o quanto', run(ctx, `
     const i = itensDoDia(hoje()).find(x => x.tipo === 'jejum');
-    [i.estado, horaVisivel(i)];
+    [i.estado, detalheItem(i)];
   `), ['feito', '400 ml']);
   eq('o card de água avisa que já contou', run(ctx, `
     renderAgua; jejumDoDia(hoje()).ml;
@@ -934,6 +936,85 @@ console.log('\n── Água em jejum ──────────────�
     const p = perfil(); p.registrarJejum = false; DB.set('perfil', p);
     itensDoDia(hoje()).some(i => i.tipo === 'jejum');
   `), false);
+}
+
+console.log('\n── A extra entra na sequência, não no relógio ─');
+{
+  const ctx = novoSandbox();
+
+  // O caso que o Rodrigo simulou: 22h no relógio, mas o café ainda não foi feito.
+  // A extra aconteceu ANTES do café na vida dela, e é ali que ela tem que entrar.
+  run(ctx, `
+    abrirJejum(); confirmarJejum();
+    abrirRefeicaoExtra(); obsExtra = 'um pedaço de bolo'; horaExtra = '22:00'; confirmarExtra();
+  `);
+  eq('entra logo depois do que já foi feito, antes do café', run(ctx, `
+    itensDoDia(hoje()).map(i => i.tipo === 'refeicao-extra' ? 'EXTRA' : i.nome).slice(0, 3);
+  `), ['Água em jejum', 'EXTRA', 'Café da manhã']);
+  eq('mas o carimbo continua sendo a hora real', run(ctx, `
+    horaVisivel(itensDoDia(hoje()).find(i => i.tipo === 'refeicao-extra'));
+  `), '22:00');
+  eq('e a próxima pendente continua sendo o café', run(ctx, `
+    itensDoDia(hoje()).find(i => i.estado === 'pendente').nome;
+  `), 'Café da manhã');
+
+  // Uma segunda extra no mesmo intervalo entra DEPOIS da primeira, não em cima
+  run(ctx, "abrirRefeicaoExtra(); obsExtra = 'castanha'; horaExtra = '08:00'; confirmarExtra();");
+  eq('a segunda extra fica depois da primeira', run(ctx, `
+    itensDoDia(hoje()).filter(i => i.tipo === 'refeicao-extra')
+      .map(i => i.log.escolhas[0].itens[0].nome);
+  `), ['um pedaço de bolo', 'castanha']);
+  eq('e o café segue sendo o próximo', run(ctx, `
+    itensDoDia(hoje()).find(i => i.estado === 'pendente').nome;
+  `), 'Café da manhã');
+
+  // Depois do café feito, a extra seguinte cai depois dele
+  run(ctx, `
+    abrirRefeicao('r-cafe');
+    dietaAtiva().refeicoes[0].grupos.forEach(g => escolher(g.id, g.opcoes[0].id));
+    confirmarRefeicao();
+    abrirRefeicaoExtra(); obsExtra = 'bolacha'; horaExtra = '09:30'; confirmarExtra();
+  `);
+  eq('agora a extra nova entra depois do café', run(ctx, `
+    const nomes = itensDoDia(hoje()).map(i =>
+      i.tipo === 'refeicao-extra' ? i.log.escolhas[0].itens[0].nome : i.nome);
+    nomes.indexOf('bolacha') > nomes.indexOf('Café da manhã');
+  `), true);
+
+  // Editar não pode remexer a posição já conquistada
+  eq('editar a extra mantém o lugar dela', run(ctx, `
+    const alvo = DB.get('logRefeicoes').find(l => l.extra && l.hora === '22:00');
+    const antes = alvo.ordem;
+    abrirRefeicaoExtra(alvo.id); horaExtra = '23:30'; confirmarExtra();
+    DB.get('logRefeicoes').find(l => l.id === alvo.id).ordem === antes;
+  `), true);
+}
+
+console.log('\n── Carimbo à esquerda, quantidade à direita ──');
+{
+  const ctx = novoSandbox();
+  eq('a coluna da hora existe mesmo vazia (nomes alinhados)', run(ctx, `
+    (noHTML(itensDoDia(hoje()).find(i => i.tipo === 'refeicao'), false).match(/no-hora/g) || []).length;
+  `), 1);
+
+  run(ctx, `
+    abrirJejum(); definirJejum(400); confirmarJejum();
+    abrirExercicio();
+    selecionarExercicio('Musculação'); definirDuracao(60); confirmarExercicio();
+    selecionarExercicio('Corrida'); definirDuracao(30); confirmarExercicio();
+  `);
+  eq('jejum: hora à esquerda, ml à direita', run(ctx, `
+    const i = itensDoDia(hoje()).find(x => x.tipo === 'jejum');
+    [/^\\d\\d:\\d\\d$/.test(horaVisivel(i)), detalheItem(i)];
+  `), [true, '400 ml']);
+  eq('treino: começou às, e o tempo somado à direita', run(ctx, `
+    const t = itensDoDia(hoje()).find(x => x.tipo === 'treino');
+    [/^\\d\\d:\\d\\d$/.test(horaVisivel(t)), detalheItem(t)];
+  `), [true, '1h30']);
+  eq('refeição pendente não inventa carimbo', run(ctx, `
+    const r = itensDoDia(hoje()).find(x => x.tipo === 'refeicao');
+    [horaVisivel(r), detalheItem(r)];
+  `), ['', '']);
 }
 
 console.log(`\n${falhou ? '✗' : '✓'} ${ok} passaram, ${falhou} falharam\n`);

@@ -614,6 +614,19 @@ function fecharSheet() {
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+/** Horário tocável: abre a rodinha nativa do iPhone (hora + minuto) no toque.
+ *  O input fica POR CIMA, invisível, e quem aparece é o nosso texto — estilizar
+ *  o controle nativo do Safari não é confiável e o tamanho dele varia sozinho
+ *  (foi exatamente o que causou os campos sobrepostos). Assim a gente fica com
+ *  o visual e o iPhone fica com o seletor bom. */
+function horaToqueHTML(valor, aoMudar, cls = '') {
+  return `<span class="hora-toque ${cls}">
+    <span class="hora-toque-v num">${esc(valor)}</span>
+    <input type="time" value="${esc(valor)}" aria-label="Escolher o horário"
+           onchange="${aoMudar}">
+  </span>`;
+}
+
 const sheetAberto = () => document.getElementById('sheet').classList.contains('on')
                        || document.getElementById('confirma').classList.contains('on');
 
