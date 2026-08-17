@@ -228,10 +228,13 @@ function comidaPlanoHTML() {
   if (!dieta) return `<div class="vazio"><span class="flor">🌱</span>Nenhum plano ativo.</div>`;
   const pausadas = dieta.refeicoes.filter(r => r.pausada);
 
-  const cardRefeicao = r => `
+  const cardRefeicao = r => {
+    const grupos = r.grupos.filter(g => !g.pausada);
+    const pausadosAqui = r.grupos.length - grupos.length;
+    return `
       <div class="cartao">
         <h3 style="font-family:var(--display);font-variation-settings:'SOFT' 100,'WONK' 1,'opsz' 30;font-weight:500;font-size:17px;margin-bottom:12px">${esc(r.nome)}</h3>
-        ${r.grupos.map(g => `
+        ${grupos.map(g => `
           <div style="margin-bottom:13px">
             <div class="grupo-topo" style="margin-bottom:7px">
               <span class="rotulo" style="color:var(--tinta-dim)">${esc(g.nome)}</span>
@@ -240,7 +243,9 @@ function comidaPlanoHTML() {
             </div>
             <div style="font-size:14px;color:var(--tinta-dim);line-height:1.6">${esc(g.opcoes.map(o => o.nome).join(' · ')) || '—'}</div>
           </div>`).join('') || '<div style="color:var(--tinta-fraca);font-size:13.5px">sem grupos</div>'}
+        ${pausadosAqui ? `<div style="font-size:12px;color:var(--tinta-fraca)">+${pausadosAqui} em pausa · edite em Ajustes</div>` : ''}
       </div>`;
+  };
 
   return `
     ${dieta.obs ? `<p style="font-size:13.5px;color:var(--tinta-dim);line-height:1.6;margin-bottom:16px">${esc(dieta.obs)}</p>` : ''}

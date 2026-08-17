@@ -8,6 +8,37 @@
 
 const AGUA_BOTOES = [200, 300, 500, 1000];
 
+// O dia que a tela Hoje está mostrando/editando. Começa em hoje() e só muda
+// pela navegação dentro desta tela (mudarDia/irParaDia) — tocar na aba Hoje
+// sempre reseta pra hoje (ver ir() em core.js).
+let diaSelecionado = hoje();
+
+/** "Agora" só faz sentido em tempo real. Editando um dia passado, ela sempre
+ *  vai ajustar a hora de qualquer jeito — mas o valor inicial fica mais perto
+ *  do esperado partindo de um horário plausível daquele tipo de registro, não
+ *  da hora real de quem está mexendo no celular dias depois. */
+function horaInicial(padrao) {
+  return diaSelecionado === hoje() ? horaLocal() : padrao;
+}
+
+function mudarDia(delta) {
+  const novo = somaDias(diaSelecionado, delta);
+  if (novo > hoje()) return;               // não deixa ir pro futuro
+  diaSelecionado = novo;
+  RENDER.hoje();
+}
+
+function irParaDia(v) {
+  if (!v || v > hoje()) return;
+  diaSelecionado = v;
+  RENDER.hoje();
+}
+
+function irParaHoje() {
+  diaSelecionado = hoje();
+  RENDER.hoje();
+}
+
 /** Monta os nós do dia, em ordem de horário. */
 function itensDoDia(data) {
   const itens = [];
@@ -29,9 +60,11 @@ function itensDoDia(data) {
     tipo: 'remedio', id: m.id, hora: m.hora, nome: m.nome, ref: m,
   }));
 
-  if (ehDiaDeTreino(data)) itens.push({
-    tipo: 'treino', id: 'treino', hora: perfil().horaExercicio || '18:00', nome: 'Exercício',
-  });
+  // Sempre presente — ela pode ter treinado num dia fora do plano (um sábado
+  // que não estava marcado, por exemplo), e o app não pode fingir que isso
+  // não é uma opção. `ehDiaDeTreino` só decide se é OBRIGATÓRIO hoje (estado
+  // 'pendente' vs 'opcional' — ver abaixo).
+  itens.push({ tipo: 'treino', id: 'treino', hora: perfil().horaExercicio || '18:00', nome: 'Exercício' });
 
   (DB.get('sessoes') || []).filter(s => s.data === data).forEach(s => itens.push({
     tipo: 'sessao', id: s.id, hora: s.hora || '09:00', nome: 'Sessão na clínica', ref: s,
@@ -68,7 +101,10 @@ function itensDoDia(data) {
     } else if (i.tipo === 'treino') {
       i.logs = logE;                       // pode ter mais de uma atividade no dia
       i.log = logE[0] || null;
-      i.estado = logE.length ? 'feito' : 'pendente';
+      // Dia de descanso e ainda não treinou: 'opcional', não 'pendente' — não
+      // vira a "próxima coisa a fazer" nem impede o dia de fechar como
+      // completo, mas o item continua ali, tocável, se ela quiser registrar.
+      i.estado = logE.length ? 'feito' : (ehDiaDeTreino(data) ? 'pendente' : 'opcional');
     } else if (i.tipo === 'dormir') {
       i.log = logS[0] || null;
       i.estado = i.log ? 'feito' : 'pendente';
@@ -113,12 +149,17 @@ function ordemParaExtra(data) {
 
 // ══ Render principal ═══════════════════════════════════════════
 RENDER.hoje = function () {
-  const data = hoje();
+  const data = diaSelecionado;
+  const vendoHoje = data === hoje();
+  if (!vendoHoje) reongelarScore(data);   // mantém o placar do dia passado em dia com a edição
+
   const p = perfil();
   const itens = itensDoDia(data);
-  const { nota } = notaDoDia(data);
+  const nota = notaDe(data);
 
-  const pendentes = itens.filter(i => i.estado === 'pendente');
+  // Num dia passado não existe "agora": é um checklist pra revisar e
+  // completar, sem o card grande de urgência que só faz sentido em tempo real.
+  const pendentes = vendoHoje ? itens.filter(i => i.estado === 'pendente') : [];
   const ativo = pendentes[0] || null;
 
   const el = document.getElementById('tela-hoje');
@@ -126,7 +167,15 @@ RENDER.hoje = function () {
     <header class="cabeca">
       <div class="cabeca-txt">
         <h1>${esc(saudacao())}, ${esc(p.nome || 'você')} <span aria-hidden="true">🌸</span></h1>
-        <div class="data">${esc(fmt.longa(data))}</div>
+        <div class="dia-nav">
+          <button class="dia-seta" onclick="mudarDia(-1)" aria-label="Dia anterior">‹</button>
+          <span class="dia-toque">${esc(fmt.longa(data))}
+            <input type="date" value="${esc(data)}" max="${esc(hoje())}" aria-label="Escolher o dia"
+                   onchange="irParaDia(this.value)">
+          </span>
+          <button class="dia-seta" onclick="mudarDia(1)" aria-label="Dia seguinte" ${vendoHoje ? 'disabled' : ''}>›</button>
+        </div>
+        ${vendoHoje ? '' : `<button class="link-fraco" style="padding:3px 0" onclick="irParaHoje()">Voltar para hoje</button>`}
       </div>
       <div class="nota">
         <div class="n num" style="${nota >= 100 ? 'color:var(--ouro-forte)' : ''}">${nota}<sup>%</sup></div>
@@ -142,7 +191,7 @@ RENDER.hoje = function () {
 
     <button class="btn btn-vazio btn-sm" style="width:100%;margin-top:14px" onclick="abrirRefeicaoExtra()">${IC.mais} Refeição extra</button>
 
-    ${ativo ? '' : fimDoDiaHTML(itens, nota)}
+    ${ativo ? '' : (vendoHoje ? fimDoDiaHTML(itens, nota) : '')}
   `;
 
   renderAgua();
@@ -219,7 +268,7 @@ function noHTML(i, ativo) {
   if (ativo) return cardAgoraHTML(i);
 
   const cls = ['no', corDoItem(i),
-    i.estado === 'feito' ? 'feito' : i.estado === 'pulado' ? 'pulado' : ''].join(' ');
+    i.estado === 'feito' ? 'feito' : i.estado === 'pulado' ? 'pulado' : i.estado === 'opcional' ? 'opcional' : ''].join(' ');
   const marca = i.estado === 'feito' ? IC.check
               : i.estado === 'pulado' ? '<span style="font-size:13px">—</span>'
               : '';
@@ -293,7 +342,7 @@ const primeiraPalavra = s => String(s).split(' ')[0].toLowerCase();
 function resumoRefeicao(r) {
   const nomes = [];
   r.grupos.forEach(g => {
-    if (g.dependeDe) return;
+    if (g.dependeDe || g.pausada) return;
     const nome = (g.bloco || g.nome).toLowerCase();
     if (!nomes.includes(nome)) nomes.push(nome);
   });
@@ -308,11 +357,14 @@ function fimDoDiaHTML(itens, nota) {
       <p>Cadastre o plano alimentar e os medicamentos em Ajustes.</p>
     </div>`;
   }
-  const feitos = itens.filter(i => i.estado === 'feito').length;
+  // Treino opcional (dia de descanso, não tocado) não entra na conta: ele não
+  // era exigido, então não pode aparecer como algo que "faltou".
+  const obrigatorios = itens.filter(i => i.estado !== 'opcional');
+  const feitos = obrigatorios.filter(i => i.estado === 'feito').length;
   const falta = perfil().metaAgua - aguaDoDia(hoje());
   const msg = falta > 0 ? `Só falta a água: mais ${esc(fmt.litros(falta))} até a meta.`
             : nota >= 100 ? 'Dia perfeito. Cada item do plano, cumprido.'
-            : nota >= 70  ? `${feitos} de ${itens.length} concluídos. Bom dia de tratamento.`
+            : nota >= 70  ? `${feitos} de ${obrigatorios.length} concluídos. Bom dia de tratamento.`
             :               'Amanhã tem mais. O que ficou pra trás não volta pra te cobrar.';
   return `
     <div class="fim-dia" style="margin-top:18px">
@@ -344,9 +396,9 @@ let jejumHora = null;
 const JEJUM_OPCOES = [200, 300, 500];
 
 function abrirJejum() {
-  const log = jejumDoDia(hoje());
+  const log = jejumDoDia(diaSelecionado);
   jejumMl = log ? log.ml : (perfil().mlJejum || 300);
-  jejumHora = log ? log.hora : horaLocal();
+  jejumHora = log ? log.hora : horaInicial('07:00');
 
   abrirSheet('<div class="sheet-alca"></div><div id="jejum-cx"></div>', () => RENDER.hoje());
   renderJejum();
@@ -355,8 +407,8 @@ function abrirJejum() {
 function renderJejum() {
   const cx = document.getElementById('jejum-cx');
   if (!cx) return;
-  const log = jejumDoDia(hoje());
-  const total = aguaDoDia(hoje());
+  const log = jejumDoDia(diaSelecionado);
+  const total = aguaDoDia(diaSelecionado);
 
   cx.innerHTML = `
     <div class="sheet-cabeca">
@@ -417,7 +469,7 @@ function definirHoraJejum(v) {
 }
 
 function confirmarJejum() {
-  const data = hoje();
+  const data = diaSelecionado;
   const logs = (DB.get('logAgua') || []).filter(l => !(l.data === data && l.origem === 'jejum'));
   logs.push({ id: uid(), data, hora: jejumHora || horaLocal(), ml: jejumMl, origem: 'jejum' });
   DB.set('logAgua', logs);
@@ -435,7 +487,7 @@ function confirmarJejum() {
 
 function desmarcarJejum() {
   DB.set('logAgua', (DB.get('logAgua') || [])
-    .filter(l => !(l.data === hoje() && l.origem === 'jejum')));
+    .filter(l => !(l.data === diaSelecionado && l.origem === 'jejum')));
   fecharSheet();
   RENDER.hoje();
 }
@@ -448,14 +500,22 @@ function diaDoSono() {
   return agora.getHours() < 5 ? somaDias(dataLocal(agora), -1) : dataLocal(agora);
 }
 
+/** A regra da madrugada ("antes das 5h ainda é a noite de ontem") só faz
+ *  sentido registrando em tempo real. Editando um dia passado, o dia do
+ *  sono é literalmente o dia que ela escolheu na navegação — não tem
+ *  "agora" pra rolar pra trás. */
+function diaSonoAlvo() {
+  return diaSelecionado === hoje() ? diaDoSono() : diaSelecionado;
+}
+
 let sonoHora = null;
 
 /** Fecha o dia. Abre com a hora de agora, mas ajustável: muita gente lembra de
  *  marcar meia hora depois de já estar deitada, e aí o registro sairia errado. */
 function abrirSono() {
-  const data = diaDoSono();
+  const data = diaSonoAlvo();
   const log = (DB.get('logSono') || []).find(l => l.data === data);
-  sonoHora = log ? log.hora : horaLocal();
+  sonoHora = log ? log.hora : horaInicial(perfil().horaSono || '23:00');
 
   abrirSheet('<div class="sheet-alca"></div><div id="sono-cx"></div>', () => RENDER.hoje());
   renderSono();
@@ -464,7 +524,7 @@ function abrirSono() {
 function renderSono() {
   const cx = document.getElementById('sono-cx');
   if (!cx) return;
-  const data = diaDoSono();
+  const data = diaSonoAlvo();
   const log = (DB.get('logSono') || []).find(l => l.data === data);
   const agora = horaLocal();
 
@@ -515,7 +575,7 @@ function confirmarSono() {
 }
 
 function registrarSono(hora) {
-  const data = diaDoSono();
+  const data = diaSonoAlvo();
   const logs = (DB.get('logSono') || []).filter(l => l.data !== data);
   const h = hora || horaLocal();
   logs.push({ id: uid(), data, hora: h });
@@ -525,7 +585,7 @@ function registrarSono(hora) {
 }
 
 function desmarcarSono() {
-  DB.set('logSono', (DB.get('logSono') || []).filter(l => l.data !== diaDoSono()));
+  DB.set('logSono', (DB.get('logSono') || []).filter(l => l.data !== diaSonoAlvo()));
   fecharSheet();
   RENDER.hoje();
 }
@@ -535,7 +595,7 @@ function desmarcarSono() {
 function renderAgua() {
   const cx = document.getElementById('card-agua');
   if (!cx) return;
-  const data = hoje();
+  const data = diaSelecionado;
   const meta = perfil().metaAgua || 3000;
   const total = aguaDoDia(data);
   const temLog = (DB.get('logAgua') || []).some(l => l.data === data);
@@ -575,13 +635,13 @@ function renderAgua() {
 
 function beberAgua(ml) {
   const meta = perfil().metaAgua || 3000;
-  const antes = aguaDoDia(hoje());
-  DB.push('logAgua', { id: uid(), data: hoje(), hora: horaLocal(), ml });
+  const antes = aguaDoDia(diaSelecionado);
+  DB.push('logAgua', { id: uid(), data: diaSelecionado, hora: horaInicial('12:00'), ml });
   const depois = antes + ml;
 
   renderAgua();
   atualizarNota();
-  if (antes < meta && depois >= meta) {
+  if (diaSelecionado === hoje() && antes < meta && depois >= meta) {
     toast('Meta de água batida hoje 💧');
     checarConquistas();
   }
@@ -590,7 +650,7 @@ function beberAgua(ml) {
 function desfazerAgua() {
   const logs = DB.get('logAgua') || [];
   for (let k = logs.length - 1; k >= 0; k--) {
-    if (logs[k].data === hoje()) {
+    if (logs[k].data === diaSelecionado) {
       logs.splice(k, 1);
       DB.set('logAgua', logs);
       renderAgua();
@@ -604,8 +664,9 @@ function desfazerAgua() {
 function atualizarNota() {
   const el = document.querySelector('#tela-hoje .nota .n');
   if (!el) return;
+  if (diaSelecionado < hoje()) reongelarScore(diaSelecionado);
   const antes = parseInt(el.textContent, 10) || 0;
-  const { nota } = notaDoDia(hoje());
+  const nota = notaDe(diaSelecionado);
   animarNumero(el, antes, nota, '<sup>%</sup>');
   el.style.color = nota >= 100 ? 'var(--ouro-forte)' : '';
   if (nota >= 100 && antes < 100) chuvaDePetalas();
@@ -637,8 +698,8 @@ function abrirRefeicao(refeicaoId) {
   r.grupos.forEach(g => { sel[g.id] = []; });
 
   // Reabrir uma refeição já registrada traz as escolhas de volta pra edição.
-  const log = (DB.get('logRefeicoes') || []).find(l => l.data === hoje() && l.refeicaoId === r.id);
-  horaConfirmacao = (log && log.status === 'feita') ? log.hora : horaLocal();
+  const log = (DB.get('logRefeicoes') || []).find(l => l.data === diaSelecionado && l.refeicaoId === r.id);
+  horaConfirmacao = (log && log.status === 'feita') ? log.hora : horaInicial(r.hora);
   if (log && log.status === 'feita') {
     (log.escolhas || []).forEach(e => {
       const g = r.grupos.find(x => x.id === e.grupoId);
@@ -686,7 +747,10 @@ function grupoAtivo(g) {
   return (sel[g.dependeDe.grupoId] || []).some(it => it.opcaoId === g.dependeDe.opcaoId);
 }
 
-const gruposAtivos = () => refAtual.grupos.filter(grupoAtivo);
+// Grupo pausado (ex.: "Chá ou café", quando ela não usa nenhum dos dois) some
+// do sheet igual a um grupo condicional que nunca ativou — mas fica no plano,
+// editável em Ajustes, pra reativar quando quiser.
+const gruposAtivos = () => refAtual.grupos.filter(g => !g.pausada && grupoAtivo(g));
 
 /** Todo grupo tem nome que se sustenta sozinho ("Complementos do suco", não
  *  só "Completar"), então fora do sheet basta o nome — concatenar o bloco
@@ -729,7 +793,7 @@ function renderFimGrupos() {
   const total = Object.values(sel).reduce((s, a) => s + a.length, 0);
   const faltando = gruposAtivos().filter(g => !grupoCompleto(g));
   const jaFeita = (DB.get('logRefeicoes') || [])
-    .some(l => l.data === hoje() && l.refeicaoId === refAtual.id && l.status === 'feita');
+    .some(l => l.data === diaSelecionado && l.refeicaoId === refAtual.id && l.status === 'feita');
   const anterior = ultimaEscolha(refAtual.id);
 
   cx.innerHTML = `
@@ -978,7 +1042,7 @@ function irParaConfirmar() {
 /** Escolhas da última vez que ela fez essa refeição (qualquer dia anterior). */
 function ultimaEscolha(refeicaoId) {
   const logs = (DB.get('logRefeicoes') || [])
-    .filter(l => l.refeicaoId === refeicaoId && l.status === 'feita' && l.data < hoje())
+    .filter(l => l.refeicaoId === refeicaoId && l.status === 'feita' && l.data < diaSelecionado)
     .sort((a, b) => (a.data < b.data ? 1 : -1));
   return logs[0] || null;
 }
@@ -1009,10 +1073,10 @@ function confirmarRefeicao() {
   const faltou = gruposAtivos().filter(g => !grupoCompleto(g)).map(nomeCheio);
 
   const logs = DB.get('logRefeicoes') || [];
-  const i = logs.findIndex(l => l.data === hoje() && l.refeicaoId === refAtual.id);
+  const i = logs.findIndex(l => l.data === diaSelecionado && l.refeicaoId === refAtual.id);
   const reg = {
     id: i >= 0 ? logs[i].id : uid(),
-    data: hoje(),
+    data: diaSelecionado,
     dietaId: dietaAtiva().id,
     refeicaoId: refAtual.id,
     refeicaoNome: refAtual.nome,
@@ -1035,10 +1099,10 @@ function confirmarRefeicao() {
 
 function pularRefeicao() {
   const logs = DB.get('logRefeicoes') || [];
-  const i = logs.findIndex(l => l.data === hoje() && l.refeicaoId === refAtual.id);
+  const i = logs.findIndex(l => l.data === diaSelecionado && l.refeicaoId === refAtual.id);
   const reg = {
     id: i >= 0 ? logs[i].id : uid(),
-    data: hoje(), dietaId: dietaAtiva().id, refeicaoId: refAtual.id, refeicaoNome: refAtual.nome,
+    data: diaSelecionado, dietaId: dietaAtiva().id, refeicaoId: refAtual.id, refeicaoNome: refAtual.nome,
     hora: horaLocal(), horaPlanejada: refAtual.hora,
     escolhas: [], completa: false, faltou: gruposAtivos().map(nomeCheio), status: 'pulada',
   };
@@ -1050,7 +1114,7 @@ function pularRefeicao() {
 
 function desmarcarRefeicao() {
   const logs = (DB.get('logRefeicoes') || [])
-    .filter(l => !(l.data === hoje() && l.refeicaoId === refAtual.id));
+    .filter(l => !(l.data === diaSelecionado && l.refeicaoId === refAtual.id));
   DB.set('logRefeicoes', logs);
   fecharSheet();
   RENDER.hoje();
@@ -1074,7 +1138,7 @@ function abrirRefeicaoExtra(logId) {
   GRUPOS_EXTRA.forEach(c => { selExtra[c.id] = []; });
 
   const log = logId ? (DB.get('logRefeicoes') || []).find(l => l.id === logId) : null;
-  horaExtra = log ? log.hora : horaLocal();
+  horaExtra = log ? log.hora : horaInicial('12:00');
   if (log) {
     (log.escolhas || []).forEach(e => {
       if (e.grupoId === 'obs') { obsExtra = (e.itens[0] || {}).nome || ''; return; }
@@ -1181,13 +1245,13 @@ function confirmarExtra() {
   const i = extraEditandoId ? logs.findIndex(l => l.id === extraEditandoId) : -1;
   const reg = {
     id: extraEditandoId || uid(),
-    data: hoje(),
+    data: diaSelecionado,
     dietaId: dietaAtiva() ? dietaAtiva().id : null,
     refeicaoId: null,
     refeicaoNome: 'Refeição extra',
     hora: horaExtra,
     // Editar não remexe a posição: ela já está no lugar certo da sequência.
-    ordem: i >= 0 ? logs[i].ordem : ordemParaExtra(hoje()),
+    ordem: i >= 0 ? logs[i].ordem : ordemParaExtra(diaSelecionado),
     horaPlanejada: null,
     escolhas,
     completa: true,
@@ -1221,8 +1285,8 @@ let medHora = null;
 
 function tomarMedicamento(medId, hora) {
   const logs = DB.get('logMedicamentos') || [];
-  if (logs.some(l => l.data === hoje() && l.medId === medId)) return;
-  logs.push({ id: uid(), data: hoje(), medId, hora: hora || horaLocal() });
+  if (logs.some(l => l.data === diaSelecionado && l.medId === medId)) return;
+  logs.push({ id: uid(), data: diaSelecionado, medId, hora: hora || horaLocal() });
   DB.set('logMedicamentos', logs);
   const m = (DB.get('medicamentos') || []).find(x => x.id === medId);
   toast(`${m ? m.nome : 'Medicamento'} marcado`);
@@ -1233,10 +1297,10 @@ function tomarMedicamento(medId, hora) {
 function abrirMedicamento(medId) {
   const m = (DB.get('medicamentos') || []).find(x => x.id === medId);
   if (!m) return;
-  const log = (DB.get('logMedicamentos') || []).find(l => l.data === hoje() && l.medId === medId);
+  const log = (DB.get('logMedicamentos') || []).find(l => l.data === diaSelecionado && l.medId === medId);
 
   medAtualId = medId;
-  medHora = log ? log.hora : horaLocal();
+  medHora = log ? log.hora : horaInicial(m.hora);
 
   abrirSheet('<div class="sheet-alca"></div><div id="med-cx"></div>', () => RENDER.hoje());
   renderMedicamento();
@@ -1247,7 +1311,7 @@ function renderMedicamento() {
   if (!cx) return;
   const m = (DB.get('medicamentos') || []).find(x => x.id === medAtualId);
   if (!m) return;
-  const log = (DB.get('logMedicamentos') || []).find(l => l.data === hoje() && l.medId === medAtualId);
+  const log = (DB.get('logMedicamentos') || []).find(l => l.data === diaSelecionado && l.medId === medAtualId);
 
   cx.innerHTML = `
     <div class="sheet-cabeca">
@@ -1265,7 +1329,8 @@ function renderMedicamento() {
         ${horaToqueHTML(medHora, 'definirHoraMedicamento(this.value)')}
       </div>
       ${log ? '' : `<p class="sono-obs" style="text-align:left;padding:0">
-        Já vem com a hora de agora — se você tomou antes, toque para corrigir.</p>`}
+        ${diaSelecionado === hoje() ? 'Já vem com a hora de agora — se você tomou antes, toque para corrigir.'
+          : 'Toque na hora pra escolher quando foi.'}</p>`}
     </div>
 
     <div class="sheet-pe">
@@ -1283,7 +1348,7 @@ function definirHoraMedicamento(v) {
   medHora = v;
 
   const logs = DB.get('logMedicamentos') || [];
-  const l = logs.find(x => x.data === hoje() && x.medId === medAtualId);
+  const l = logs.find(x => x.data === diaSelecionado && x.medId === medAtualId);
   if (l) {
     l.hora = v;
     DB.set('logMedicamentos', logs);
@@ -1299,7 +1364,7 @@ function confirmarMedicamento() {
 
 function desmarcarMedicamento(medId) {
   DB.set('logMedicamentos', (DB.get('logMedicamentos') || [])
-    .filter(l => !(l.data === hoje() && l.medId === medId)));
+    .filter(l => !(l.data === diaSelecionado && l.medId === medId)));
   fecharSheet();
   RENDER.hoje();
 }
@@ -1327,8 +1392,9 @@ function abrirExercicio() {
     <div class="sheet-alca"></div>
     <div class="sheet-cabeca">
       <div>
-        <h2>Exercício de hoje</h2>
-        <div class="dica">Pode registrar mais de uma atividade no mesmo dia.</div>
+        <h2>${diaSelecionado === hoje() ? 'Exercício de hoje' : 'Exercício'}</h2>
+        <div class="dica">${diaSelecionado === hoje() ? 'Pode registrar mais de uma atividade no mesmo dia.'
+          : `${esc(fmt.maiuscula(fmt.longa(diaSelecionado)))}`}</div>
       </div>
       <button class="sheet-x" onclick="fecharSheet()" aria-label="Fechar">✕</button>
     </div>
@@ -1342,14 +1408,14 @@ function renderExercicio() {
   const cx = document.getElementById('ex-corpo');
   if (!cx) return;
   const tipos = DB.get('exercicios') || SEED.exercicios;
-  const feitos = treinosDoDia(hoje());
+  const feitos = treinosDoDia(diaSelecionado);
   const pedeKm = temDistancia(exercicioSel);
 
   cx.innerHTML = `
     ${feitos.length ? `
       <div class="grupo">
         <div class="grupo-topo">
-          <span class="grupo-nome">Já registrado hoje</span>
+          <span class="grupo-nome">${diaSelecionado === hoje() ? 'Já registrado hoje' : 'Já registrado nesse dia'}</span>
           <span class="grupo-cont num">${esc(fmt.duracao(feitos.reduce((s, l) => s + (l.duracao || 0), 0)))}</span>
         </div>
         ${feitos.map(l => `
@@ -1439,8 +1505,8 @@ function renderPeExercicio() {
 function confirmarExercicio() {
   if (!exercicioSel) return;
   DB.push('logExercicios', {
-    id: uid(), data: hoje(), tipo: exercicioSel, duracao: exercicioMin,
-    distancia: exercicioKm || null, hora: horaLocal(), obs: '',
+    id: uid(), data: diaSelecionado, tipo: exercicioSel, duracao: exercicioMin,
+    distancia: exercicioKm || null, hora: horaInicial(perfil().horaExercicio || '18:00'), obs: '',
   });
   toast(`${exercicioSel} · ${fmt.duracao(exercicioMin)} 💜`);
   checarConquistas();

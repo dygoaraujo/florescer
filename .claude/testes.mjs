@@ -48,7 +48,7 @@ function novoSandbox() {
       createElement: () => elemento(), body: elemento(),
       fonts: { ready: { then: noop }, check: () => true },
     },
-    window: { addEventListener: noop, innerWidth: 375 },
+    window: { addEventListener: noop, innerWidth: 375, scrollTo: noop },
     requestAnimationFrame: noop,
   };
   sandbox.globalThis = sandbox;
@@ -342,12 +342,16 @@ console.log('\n── Sessão na clínica ────────────�
 console.log('\n── Refeição incompleta ─────────────────────');
 {
   const ctx = novoSandbox();
+  // Um dia dentro da semana anterior (seg→sáb), fixo independente de qual dia
+  // da semana é "hoje" agora — "ontem" vira domingo (fora da semana rastreada)
+  // sempre que o teste roda numa segunda, e o relatório some.
+  run(ctx, 'var DIA_TESTE = somaDias(inicioSemana(hoje()), -2);');   // sábado da semana passada
   run(ctx, `
     var dReal = dietaAtiva();
     var almoco = dReal.refeicoes[2];
     // confirmou só a proteína: faltaram os dois grupos de vegetais
     DB.set('logRefeicoes', [{
-      id:'x', data: somaDias(hoje(),-1), dietaId: dReal.id, refeicaoId: almoco.id, refeicaoNome: almoco.nome,
+      id:'x', data: DIA_TESTE, dietaId: dReal.id, refeicaoId: almoco.id, refeicaoNome: almoco.nome,
       hora:'12:40',
       escolhas: [{ grupoId: almoco.grupos[2].id, grupoNome:'Proteína',
         itens: [{ opcaoId: almoco.grupos[2].opcoes[0].id, nome: 'Alcatra', medida: med(120,'g') }] }],
@@ -357,9 +361,9 @@ console.log('\n── Refeição incompleta ────────────
   eq('o texto do histórico traz a medida ajustada',
      run(ctx, 'escolhasTexto(DB.get("logRefeicoes")[0])'), 'Alcatra 120 g');
   eq('o relatório conta a incompleta',
-     run(ctx, 'dadosSemana(inicioSemana(somaDias(hoje(),-1))).refeicoesIncompletas'), 1);
+     run(ctx, 'dadosSemana(inicioSemana(DIA_TESTE)).refeicoesIncompletas'), 1);
   eq('e diz o que mais faltou', run(ctx, `
-    dadosSemana(inicioSemana(somaDias(hoje(),-1))).faltasComuns.map(f => f.nome + ':' + f.vezes);
+    dadosSemana(inicioSemana(DIA_TESTE)).faltasComuns.map(f => f.nome + ':' + f.vezes);
   `), ['Vegetais do Grupo A:1', 'Vegetais do Grupo B:1']);
 
   // formato antigo (opcaoIds) ainda tem que ser legível
@@ -587,6 +591,14 @@ console.log('\n── Horários para os alarmes ──────────�
 console.log('\n── Grupo condicional (chá x café) ──────────');
 {
   const ctx = novoSandbox();
+  // "Chá ou café" nasce pausado (ela não usa) — reativa pra testar o mecanismo
+  // condicional em si, que continua existindo pra quem reativar.
+  run(ctx, `
+    editarRefeicao('r-cafe');
+    alternarPausaGrupo(dietaAtiva().refeicoes[0].grupos.findIndex(g => g.id === 'g-cafe-bebida'));
+    alternarPausaGrupo(dietaAtiva().refeicoes[0].grupos.findIndex(g => g.id === 'g-cafe-cha'));
+    fecharSheet();
+  `);
   run(ctx, "abrirRefeicao('r-cafe');");
 
   eq('a lista de chás começa escondida', run(ctx, `
@@ -1188,6 +1200,188 @@ console.log('\n── Comidas novas e quantidade livre ────────'
   run(ctx, "abrirGrupo('g-ja-a'); escolher('g-ja-a', dietaAtiva().refeicoes[4].grupos[0].opcoes[2].id);");
   eq('reabriu e somou um terceiro: NÃO recolhe de novo',
      run(ctx, "[gruposAbertos.has('g-ja-a'), sel['g-ja-a'].length]"), [true, 3]);
+}
+
+console.log('\n── Navegação de dias ────────────────────────');
+{
+  const ctx = novoSandbox();
+  eq('começa em hoje', run(ctx, 'diaSelecionado === hoje()'), true);
+  eq('não deixa ir pro futuro', run(ctx, 'mudarDia(1); diaSelecionado === hoje()'), true);
+
+  run(ctx, 'mudarDia(-3);');
+  eq('anda pra trás', run(ctx, 'diaSelecionado'), run(ctx, 'somaDias(hoje(), -3)'));
+  run(ctx, 'mudarDia(1);');
+  eq('e volta um de cada vez', run(ctx, 'diaSelecionado'), run(ctx, 'somaDias(hoje(), -2)'));
+
+  eq('irParaDia ignora data no futuro', run(ctx, `
+    irParaDia(somaDias(hoje(), 3)); diaSelecionado === somaDias(hoje(), -2);
+  `), true);
+  eq('irParaDia aceita o passado', run(ctx, `
+    irParaDia(somaDias(hoje(), -10)); diaSelecionado;
+  `), run(ctx, 'somaDias(hoje(), -10)'));
+  eq('irParaHoje volta pra hoje', run(ctx, 'irParaHoje(); diaSelecionado'), run(ctx, 'hoje()'));
+
+  // Tocar na aba Hoje é o "escape hatch": não importa onde ela navegou por
+  // dentro da tela, a aba sempre volta pro dia de hoje.
+  run(ctx, 'mudarDia(-5);');
+  eq('mudou de dia', run(ctx, 'diaSelecionado === hoje()'), false);
+  run(ctx, "ir('hoje');");
+  eq('tocar na aba Hoje reseta o dia', run(ctx, 'diaSelecionado === hoje()'), true);
+}
+
+console.log('\n── Editar um dia passado ────────────────────');
+{
+  const ctx = novoSandbox();
+  const ONTEM = run(ctx, 'somaDias(hoje(), -1)');
+  run(ctx, `mudarDia(-1);`);
+  eq('está editando ontem', run(ctx, 'diaSelecionado'), ONTEM);
+
+  // Sem card grande de urgência: dia passado é checklist, não "próxima ação"
+  eq('não existe hora de agora num dia passado — cai no padrão do registro', run(ctx, `
+    abrirJejum(); jejumHora;
+  `), '07:00');
+
+  run(ctx, `definirJejum(400); confirmarJejum();`);
+  eq('o jejum grava na data certa', run(ctx, `
+    DB.get('logAgua').find(l => l.origem === 'jejum').data;
+  `), ONTEM);
+  eq('e some do dia de hoje', run(ctx, "jejumDoDia(hoje())"), null);
+
+  run(ctx, `
+    abrirRefeicao('r-almoco');
+    dietaAtiva().refeicoes[2].grupos.forEach(g => escolher(g.id, g.opcoes[0].id));
+    confirmarRefeicao();
+  `);
+  eq('a refeição grava no dia que estava selecionado', run(ctx, `
+    DB.get('logRefeicoes').find(l => l.refeicaoId === 'r-almoco').data;
+  `), ONTEM);
+
+  run(ctx, `abrirRefeicaoExtra(); obsExtra = 'bolo'; confirmarExtra();`);
+  eq('a extra também', run(ctx, `DB.get('logRefeicoes').find(l => l.extra).data;`), ONTEM);
+
+  run(ctx, `abrirMedicamento('m-multi'); confirmarMedicamento();`);
+  eq('e o remédio', run(ctx, `DB.get('logMedicamentos')[0].data;`), ONTEM);
+
+  run(ctx, `abrirExercicio(); selecionarExercicio('Caminhada'); confirmarExercicio();`);
+  eq('e o treino', run(ctx, `DB.get('logExercicios')[0].data;`), ONTEM);
+
+  run(ctx, `abrirSono(); confirmarSono();`);
+  eq('e o sono — sem a regra da madrugada, é literalmente o dia escolhido',
+     run(ctx, `DB.get('logSono')[0].data;`), ONTEM);
+
+  eq('nada disso vazou pro dia de hoje', run(ctx, `
+    itensDoDia(hoje()).every(i => i.estado !== 'feito');
+  `), true);
+}
+
+console.log('\n── O placar de um dia passado acompanha a edição ─');
+{
+  const ctx = novoSandbox();
+  const ONTEM = run(ctx, 'somaDias(hoje(), -1)');
+
+  // Congela o dia vazio primeiro (nota 0), do jeito que aconteceria sozinho
+  // quando o dia virasse de verdade.
+  run(ctx, `congelarScore('${ONTEM}');`);
+  eq('congelou vazio', run(ctx, `notaDe('${ONTEM}')`), 0);
+
+  // Ela edita: bebe água em jejum naquele dia
+  run(ctx, `mudarDia(-1); abrirJejum(); confirmarJejum();`);
+  eq('o placar sai do congelado assim que ela edita', run(ctx, `notaDe('${ONTEM}') > 0`), true);
+  eq('e bate com o que a nota ao vivo daria pro mesmo dia',
+     run(ctx, `notaDe('${ONTEM}')`), run(ctx, `notaDoDia('${ONTEM}').nota`));
+
+  // Só olhar (sem editar) não deveria gravar nada de novo no sync
+  eq('olhar de novo sem editar não regrava', run(ctx, `
+    let gravou = false;
+    const original = DB.set;
+    DB.set = (k, v) => { if (k === 'scores') gravou = true; return original(k, v); };
+    RENDER.hoje();
+    DB.set = original;
+    gravou;
+  `), false);
+}
+
+console.log('\n── Grupo pausado (chá ou café) ──────────────');
+{
+  const ctx = novoSandbox();
+  eq('nasce pausado — ela não usa nem chá nem café', run(ctx, `
+    const g = dietaAtiva().refeicoes[0].grupos.filter(x => x.id === 'g-cafe-bebida' || x.id === 'g-cafe-cha');
+    g.every(x => x.pausada === true);
+  `), true);
+  eq('some do sheet do café da manhã', run(ctx, `
+    abrirRefeicao('r-cafe');
+    gruposAtivos().some(g => g.id === 'g-cafe-bebida' || g.id === 'g-cafe-cha');
+  `), false);
+  eq('mas continua listado no editor de Ajustes', run(ctx, `
+    fecharSheet();
+    dietaAtiva().refeicoes[0].grupos.some(g => g.id === 'g-cafe-bebida');
+  `), true);
+
+  // Reativa pelo editor
+  run(ctx, `
+    editarRefeicao('r-cafe');
+    alternarPausaGrupo(dietaAtiva().refeicoes[0].grupos.findIndex(g => g.id === 'g-cafe-bebida'));
+    fecharSheet();
+  `);
+  eq('reativado, volta a aparecer', run(ctx, `
+    abrirRefeicao('r-cafe');
+    gruposAtivos().some(g => g.id === 'g-cafe-bebida');
+  `), true);
+
+  // A migração só pausa se NUNCA foi mexido — não pisa numa reativação dela
+  eq('rodar a correção de novo não repausa o que ela reativou', run(ctx, `
+    fecharSheet();
+    corrigirPlano();
+    dietaAtiva().refeicoes[0].grupos.find(g => g.id === 'g-cafe-bebida').pausada;
+  `), false);
+}
+
+console.log('\n── Treino em qualquer dia ───────────────────');
+{
+  const ctx = novoSandbox();
+  run(ctx, `const p = perfil(); p.diasExercicio = [1,2,3,4,5]; DB.set('perfil', p);`);   // seg-sex
+  const domingo = run(ctx, `
+    let d = hoje();
+    while (deData(d).getDay() !== 0) d = somaDias(d, -1);   // domingo mais recente, nunca no futuro
+    d;
+  `);
+
+  eq('o item de treino existe mesmo num dia fora do plano', run(ctx, `
+    itensDoDia('${domingo}').some(i => i.tipo === 'treino');
+  `), true);
+  eq('mas nasce opcional, não pendente', run(ctx, `
+    itensDoDia('${domingo}').find(i => i.tipo === 'treino').estado;
+  `), 'opcional');
+
+  const segunda = run(ctx, `somaDias('${domingo}', 1)`);
+  eq('num dia programado, nasce pendente', run(ctx, `
+    itensDoDia('${segunda}').find(i => i.tipo === 'treino').estado;
+  `), 'pendente');
+
+  // Registrar no domingo (fora do plano) marca como feito
+  run(ctx, `
+    irParaDia('${domingo}');
+    abrirExercicio(); selecionarExercicio('Caminhada'); confirmarExercicio();
+  `);
+  eq('registrado no domingo, vira feito', run(ctx, `
+    itensDoDia('${domingo}').find(i => i.tipo === 'treino').estado;
+  `), 'feito');
+  eq('e entra no histórico igual a qualquer outro', run(ctx, `
+    DB.get('logExercicios').some(l => l.data === '${domingo}');
+  `), true);
+
+  // Domingo sem treinar não vira "próxima ação" nem impede o dia de fechar
+  eq('opcional não vaza pra dentro de "pendentes" na tela', run(ctx, `
+    irParaDia('${domingo}');
+    const p2 = perfil(); DB.set('logExercicios', []);
+    itensDoDia('${domingo}').filter(i => i.estado === 'pendente').some(i => i.tipo === 'treino');
+  `), false);
+
+  // A nota só conta o exercício em dia programado — treinar no domingo não
+  // pontua fora do que já foi redistribuído, mas também não penaliza
+  eq('domingo sem treino: exercício sai da nota (null), não vira falta', run(ctx, `
+    notaDoDia('${domingo}').partes.exercicio;
+  `), null);
 }
 
 console.log(`\n${falhou ? '✗' : '✓'} ${ok} passaram, ${falhou} falharam\n`);

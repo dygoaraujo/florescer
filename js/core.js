@@ -257,9 +257,11 @@ const SEED = {
           obs: 'Bate tudo junto no liquidificador. Não precisa coar.',
           opcoes: opcoes([['Semente de chia', med(1, 'col chá')], ['Gengibre', med(1, 'pedaço')],
                           ['Água', med(200, 'ml')]]) },
-        { id: 'g-cafe-bebida', bloco: 'Bebida quente', nome: 'Chá ou café', qtd: 1, selecao: 'unica',
+        // Pausado: ela não toma nem chá nem café no café da manhã. Fica no
+        // plano, reativável em Ajustes.
+        { id: 'g-cafe-bebida', bloco: 'Bebida quente', nome: 'Chá ou café', qtd: 1, selecao: 'unica', pausada: true,
           opcoes: opcoes(['Chá', 'Café'], med(1, 'xc')) },
-        { id: 'g-cafe-cha', bloco: 'Bebida quente', nome: 'Tipo de chá', qtd: 1, selecao: 'unica',
+        { id: 'g-cafe-cha', bloco: 'Bebida quente', nome: 'Tipo de chá', qtd: 1, selecao: 'unica', pausada: true,
           dependeDe: { grupoId: 'g-cafe-bebida', opcaoId: idDe('Chá') },
           opcoes: opcoesPorSecao(CATALOGO.chas, med(1, 'xc')) },
         { id: 'g-cafe-prot', bloco: 'Para comer', nome: 'Proteína', qtd: 1, selecao: 'unica',
@@ -390,6 +392,11 @@ const CORRECOES_DE_NOME = [
   { de: 'o-queijo-minas-frescal', id: 'o-queijo-branco', nome: 'Queijo branco' },
 ];
 
+/** GRUPO PAUSADO por padrão (ex.: ela não toma chá nem café no café da manhã).
+ *  Só entra se `pausada` nunca foi definido — se ela mesma reativou depois em
+ *  Ajustes, isso já virou `false` explícito e essa passada não mexe mais. */
+const GRUPOS_PAUSADOS_POR_PADRAO = ['g-cafe-bebida', 'g-cafe-cha'];
+
 /** ALIMENTO NOVO numa lista que já existe. Só no plano ativo: um plano
  *  arquivado é registro do que valia na época e não se reescreve. */
 const OPCOES_ADICIONADAS = [
@@ -421,6 +428,11 @@ function corrigirPlano() {
         mudou = true;
       });
     });
+
+    if (GRUPOS_PAUSADOS_POR_PADRAO.includes(g.id) && g.pausada === undefined) {
+      g.pausada = true;
+      mudou = true;
+    }
   })));
 
   if (mudou) DB.set('dietas', dietas);
@@ -553,6 +565,20 @@ function notaDe(data) {
   return s ? s.nota : notaDoDia(data).nota;
 }
 
+/** Ela pode editar um dia passado (esqueceu de marcar antes da meia-noite) —
+ *  sem isso, o placar daquele dia ficaria preso no valor de antes da edição
+ *  pra sempre. Só reescreve se o valor mudou de verdade, então dá pra chamar
+ *  toda vez que a tela Hoje é desenhada, sem sujar o sync com gravação à toa
+ *  em quem só está OLHANDO um dia passado, não editando. */
+function reongelarScore(data) {
+  if (data >= hoje()) return;
+  const scores = DB.get('scores') || [];
+  const atual = scores.find(s => s.data === data);
+  const { nota, partes } = notaDoDia(data);
+  if (atual && atual.nota === nota && JSON.stringify(atual.partes) === JSON.stringify(partes)) return;
+  DB.set('scores', scores.filter(s => s.data !== data).concat([{ data, nota, partes }]));
+}
+
 /** Congela todos os dias com registro que já passaram. */
 function congelarPendentes() {
   const datas = new Set();
@@ -569,6 +595,10 @@ const RENDER = {};   // cada módulo registra RENDER.hoje = fn, etc.
 
 function ir(tela, opts = {}) {
   if (!TELAS.includes(tela)) tela = 'hoje';
+  // Tocar na aba Hoje sempre volta pro dia de hoje — navegar por dentro do
+  // Hoje (mudarDia/irParaDia) não passa por aqui, então isso não atrapalha
+  // quem está no meio de uma edição de dia passado.
+  if (tela === 'hoje' && typeof diaSelecionado !== 'undefined') diaSelecionado = hoje();
   telaAtual = tela;
 
   document.querySelectorAll('.tela').forEach(el => el.classList.toggle('ativa', el.id === 'tela-' + tela));

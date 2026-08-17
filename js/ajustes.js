@@ -313,10 +313,10 @@ function renderEditorRefeicao() {
       </div>
 
       ${r.grupos.map((g, gi) => `
-        <div class="cartao" style="background:var(--bruma);box-shadow:none;padding:16px;margin-top:12px">
+        <div class="cartao" style="background:var(--bruma);box-shadow:none;padding:16px;margin-top:12px${g.pausada ? ';opacity:.6' : ''}">
           <div class="campo-dupla">
             <div class="campo">
-              <label>Grupo</label>
+              <label>Grupo${g.pausada ? ' <span class="pill">pausado</span>' : ''}</label>
               <input type="text" value="${esc(g.nome)}" onchange="campoGrupo(${gi},'nome',this.value)">
             </div>
             <div class="campo">
@@ -336,7 +336,12 @@ function renderEditorRefeicao() {
                      style="min-height:44px;font-size:14.5px">
             </form>
           </div>
-          <button class="link-fraco" style="padding:6px" onclick="removerGrupo(${gi})">Remover grupo</button>
+          <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+            <button class="link-fraco" style="padding:6px" onclick="alternarPausaGrupo(${gi})">
+              ${g.pausada ? 'Reativar este grupo' : 'Pausar este grupo'}</button>
+            <button class="link-fraco" style="padding:6px" onclick="removerGrupo(${gi})">Remover grupo</button>
+          </div>
+          ${g.pausada ? '<p style="font-size:12px;color:var(--tinta-fraca);margin-top:6px">Some do sheet da refeição, mas fica aqui pra reativar.</p>' : ''}
         </div>`).join('')}
 
       <button class="btn btn-vazio btn-sm" style="width:100%;margin-top:14px" onclick="novoGrupo()">${IC.mais} Grupo alimentar</button>
@@ -357,6 +362,13 @@ function campoGrupo(gi, campo, valor) {
   mexerNaRefeicao(r => {
     if (!r.grupos[gi]) return false;
     r.grupos[gi][campo] = valor;
+  });
+}
+
+function alternarPausaGrupo(gi) {
+  mexerNaRefeicao(r => {
+    if (!r.grupos[gi]) return false;
+    r.grupos[gi].pausada = !r.grupos[gi].pausada;
   });
 }
 
