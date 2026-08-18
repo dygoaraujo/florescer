@@ -706,13 +706,28 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
  *  O input fica POR CIMA, invisível, e quem aparece é o nosso texto — estilizar
  *  o controle nativo do Safari não é confiável e o tamanho dele varia sozinho
  *  (foi exatamente o que causou os campos sobrepostos). Assim a gente fica com
- *  o visual e o iPhone fica com o seletor bom. */
-function horaToqueHTML(valor, aoMudar, cls = '') {
-  return `<span class="hora-toque ${cls}">
-    <span class="hora-toque-v num">${esc(valor)}</span>
-    <input type="time" value="${esc(valor)}" aria-label="Escolher o horário"
-           onchange="${aoMudar}">
-  </span>`;
+ *  o visual e o iPhone fica com o seletor bom.
+ *
+ *  A rodinha do iOS dispara o evento de mudança a CADA giro, não só quando ela
+ *  solta o dedo — reagir a cada giro recriando a tela (como era antes) recriava
+ *  este próprio <input>, e o input sumir do DOM no meio do gesto fechava a
+ *  rodinha sozinha, no meio do ajuste. Por isso agora o giro só atualiza o
+ *  texto (o input nunca morre enquanto ela mexe nele) e o valor só é aplicado
+ *  de fato quando ela toca em "Confirmar horário", embaixo do seletor — recebe
+ *  o nome de uma função global (ex.: 'definirHoraJejum'), chamada com o valor
+ *  atual do input só nesse toque. */
+let _horaToqueSeq = 0;
+function horaToqueHTML(valor, fnNome, cls = '') {
+  const id = 'ht' + (_horaToqueSeq++);
+  return `<div class="hora-toque-cx">
+    <span class="hora-toque ${cls}">
+      <span class="hora-toque-v num" id="${id}v">${esc(valor)}</span>
+      <input type="time" id="${id}i" value="${esc(valor)}" aria-label="Escolher o horário"
+             oninput="document.getElementById('${id}v').textContent = this.value">
+    </span>
+    <button type="button" class="hora-confirmar"
+      onclick="${fnNome}(document.getElementById('${id}i').value)">✓ Confirmar horário</button>
+  </div>`;
 }
 
 const sheetAberto = () => document.getElementById('sheet').classList.contains('on')

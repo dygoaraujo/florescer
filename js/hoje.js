@@ -438,7 +438,7 @@ function renderJejum() {
       </div>
       <div class="hora-registro" style="justify-content:flex-start">
         <span class="hora-registro-lbl">Bebi às</span>
-        ${horaToqueHTML(jejumHora, 'definirHoraJejum(this.value)')}
+        ${horaToqueHTML(jejumHora, 'definirHoraJejum')}
       </div>
 
       <p class="sono-obs" style="text-align:left;padding:0">
@@ -541,7 +541,7 @@ function renderSono() {
     <div class="sheet-corpo">
       <div class="sono-relogio">
         <button class="peso-btn" onclick="ajustarSono(-5)" aria-label="5 minutos antes">−</button>
-        ${horaToqueHTML(sonoHora, 'definirSono(this.value)')}
+        ${horaToqueHTML(sonoHora, 'definirSono')}
         <button class="peso-btn" onclick="ajustarSono(5)" aria-label="5 minutos depois">+</button>
       </div>
       <p class="sono-obs">${sonoHora === agora
@@ -804,7 +804,7 @@ function renderFimGrupos() {
         o relatório registra o que ficou de fora.</div>` : ''}
     ${total ? `<div class="hora-registro">
       <span class="hora-registro-lbl">${jaFeita ? 'Registrado às' : 'Confirmar às'}</span>
-      ${horaToqueHTML(horaConfirmacao, 'definirHoraConfirmacao(this.value)')}
+      ${horaToqueHTML(horaConfirmacao, 'definirHoraConfirmacao')}
     </div>` : ''}
     <button class="btn btn-cheio" style="width:100%;margin-top:4px" onclick="confirmarRefeicao()"
       ${total ? '' : 'disabled'}>
@@ -838,20 +838,30 @@ function grupoHTML(g, gi) {
   const escolhidos = sel[g.id] || [];
   const completo = grupoCompleto(g);
   const min = minDoGrupo(g);
-  // Recolhe quando o mínimo é atingido, pra tirar 40 opções da frente. Não é
-  // trava: o botão embaixo reabre e ela põe quantos quiser.
-  const recolhido = completo && !gruposAbertos.has(g.id);
+  // Recolhe quando o mínimo é atingido, pra tirar 40 opções da frente — mas só
+  // em grupo de escolha ÚNICA (ex.: proteína), onde bater o mínimo realmente
+  // significa "terminei". Grupo de MÚLTIPLA escolha (ex.: vegetais) nunca
+  // recolhe sozinho: ela pode continuar marcando à vontade sem ter que achar
+  // um botão "Trocar ou adicionar" escondido — foi exatamente essa sensação
+  // de limite (fechar e virar ✓ já nos 2 primeiros) que ela reclamou.
+  const recolhido = completo && g.selecao !== 'multipla' && !gruposAbertos.has(g.id);
   const busca = (buscaGrupo[g.id] || '').trim().toLowerCase();
 
   const visiveis = busca
     ? g.opcoes.filter(o => semAcento(o.nome).includes(semAcento(busca)))
     : g.opcoes;
 
+  // No grupo de múltipla escolha o "✓" sozinho lia como "pronto, acabou" — o
+  // rótulo deixa claro que aquele número é só o mínimo, não um teto.
+  const contagem = !completo ? `${escolhidos.length} de ${min}`
+    : g.selecao === 'multipla' ? `${escolhidos.length} · mín. ${min}`
+    : `${escolhidos.length} ✓`;
+
   return `
     <div class="grupo ${completo ? 'completo' : ''}" id="grupo-${esc(g.id)}">
       <div class="grupo-topo">
         <span class="grupo-nome">${esc(g.nome)}</span>
-        <span class="grupo-cont num">${completo ? `${escolhidos.length} ✓` : `${escolhidos.length} de ${min}`}</span>
+        <span class="grupo-cont num">${contagem}</span>
       </div>
       ${g.obs && !recolhido ? `<p class="grupo-obs">${esc(g.obs)}</p>` : ''}
 
@@ -967,10 +977,15 @@ function escolher(grupoId, opcaoId) {
   else atual.push({ opcaoId, nome: o.nome, medida: o.medida ? { ...o.medida } : null });
   sel[grupoId] = atual;
 
-  // Recolhe só na PRIMEIRA vez que o grupo fecha o mínimo. Se ela reabriu pra
-  // somar um terceiro vegetal, recolher a cada toque seria uma briga.
-  if (!eraCompleto && grupoCompleto(g)) gruposAbertos.delete(grupoId);
-  else gruposAbertos.add(grupoId);
+  // Recolhe só na PRIMEIRA vez que o grupo fecha o mínimo, e só em grupo de
+  // escolha única — em múltipla (vegetais etc.) ele fica sempre aberto, ver
+  // comentário em grupoHTML.
+  if (g.selecao === 'unica') {
+    if (!eraCompleto && grupoCompleto(g)) gruposAbertos.delete(grupoId);
+    else gruposAbertos.add(grupoId);
+  } else {
+    gruposAbertos.add(grupoId);
+  }
 
   limparGruposInativos();
   renderGrupos();
@@ -1194,7 +1209,7 @@ function renderExtra() {
 
     <div class="hora-registro">
       <span class="hora-registro-lbl">Registrado às</span>
-      ${horaToqueHTML(horaExtra, 'definirHoraExtra(this.value)')}
+      ${horaToqueHTML(horaExtra, 'definirHoraExtra')}
     </div>`;
 
   renderPeExtra();
@@ -1326,7 +1341,7 @@ function renderMedicamento() {
       ${m.obs ? `<p style="font-size:14px;color:var(--tinta-dim);line-height:1.6;margin-bottom:14px">${esc(m.obs)}</p>` : ''}
       <div class="hora-registro" style="justify-content:flex-start">
         <span class="hora-registro-lbl">${log ? 'Tomei às' : 'Tomar às'}</span>
-        ${horaToqueHTML(medHora, 'definirHoraMedicamento(this.value)')}
+        ${horaToqueHTML(medHora, 'definirHoraMedicamento')}
       </div>
       ${log ? '' : `<p class="sono-obs" style="text-align:left;padding:0">
         ${diaSelecionado === hoje() ? 'Já vem com a hora de agora — se você tomou antes, toque para corrigir.'

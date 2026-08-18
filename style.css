@@ -1453,6 +1453,7 @@ button.cal-d:active { background: var(--bruma); transform: scale(.92); }
 
 /* Horário tocável: parece um controle, e é — o input nativo mora invisível
    por cima, então o toque abre a rodinha do iPhone. */
+.hora-toque-cx { display: inline-flex; flex-direction: column; align-items: center; gap: 3px; }
 .hora-toque {
   position: relative;
   display: inline-flex;
@@ -1477,6 +1478,21 @@ button.cal-d:active { background: var(--bruma); transform: scale(.92); }
   padding: 0; margin: 0; border: none; background: none;
   -webkit-appearance: none; appearance: none;
 }
+
+/* Só ela tocando aqui é que o horário vale de fato — enquanto gira a rodinha,
+   é só prévia (ver comentário de horaToqueHTML em core.js). */
+.hora-confirmar {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--lavanda-forte);
+  padding: 0 10px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 9px;
+  margin: -7px 0;                 /* alvo de toque de 44px sem inchar o layout visual */
+}
+.hora-confirmar:active { background: var(--lavanda-veu); }
 
 /* O relógio grande do fim do dia também abre o seletor no toque */
 .sono-relogio .hora-toque { background: none; box-shadow: none; padding: 0 6px; }

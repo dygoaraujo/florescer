@@ -570,6 +570,24 @@ console.log('\n── Horário real e sono ────────────�
   `), true);
 }
 
+console.log('\n── Rodinha de horário: só aplica ao confirmar ─');
+{
+  // A rodinha do iOS dispara mudança a cada giro; recriar o <input> a cada
+  // giro (como era antes, via onchange + re-render) fechava a rodinha no meio
+  // do gesto. Agora o giro só atualiza o texto (oninput, sem chamar nenhuma
+  // função) e o valor só é de fato aplicado no toque do botão "Confirmar
+  // horário" — por isso testamos horaToqueHTML() direto, como função pura.
+  const ctx = novoSandbox();
+  const html = run(ctx, "horaToqueHTML('07:30', 'definirHoraJejum')");
+
+  eq('não existe mais onchange aplicando a cada giro', html.includes('onchange='), false);
+  eq('o giro (oninput) só troca o texto, não chama a função de aplicar',
+     /oninput="[^"]*textContent[^"]*"/.test(html), true);
+  eq('existe um botão explícito de confirmar', html.includes('Confirmar horário'), true);
+  eq('o botão de confirmar é quem chama a função, com o valor do input',
+     /class="hora-confirmar"[^>]*onclick="definirHoraJejum\(document\.getElementById\('\w+'\)\.value\)"/.test(html), true);
+}
+
 console.log('\n── Horários para os alarmes ────────────────');
 {
   const ctx = novoSandbox();
@@ -1189,17 +1207,33 @@ console.log('\n── Comidas novas e quantidade livre ────────'
       .escolhas.find(e => e.grupoId === 'g-al-prot').itens.map(i => i.nome);
   `), ['Whey protein', 'Patinho']);
 
-  // Recolher é conveniência, não trava: reabriu, continua aberto pra somar
+  // Grupo de MÚLTIPLA escolha (vegetais) nunca recolhe sozinho — bater o
+  // mínimo não é "acabou", é só o mínimo. Recolher escondia a lista atrás de
+  // um botão "Trocar ou adicionar" e dava exatamente a sensação de limite que
+  // ela reclamou (só conseguia marcar 2 vegetais).
   run(ctx, `
     abrirRefeicao('r-jantar');
     escolher('g-ja-a', dietaAtiva().refeicoes[4].grupos[0].opcoes[0].id);
     escolher('g-ja-a', dietaAtiva().refeicoes[4].grupos[0].opcoes[1].id);
   `);
-  eq('fechou o mínimo: recolhe pra tirar a lista da frente',
-     run(ctx, "gruposAbertos.has('g-ja-a')"), false);
-  run(ctx, "abrirGrupo('g-ja-a'); escolher('g-ja-a', dietaAtiva().refeicoes[4].grupos[0].opcoes[2].id);");
-  eq('reabriu e somou um terceiro: NÃO recolhe de novo',
+  eq('bateu o mínimo dos vegetais: continua aberto, não é um teto',
+     run(ctx, "gruposAbertos.has('g-ja-a')"), true);
+  eq('o rótulo mostra "mínimo", não um ✓ de concluído',
+     run(ctx, `
+       grupoHTML(dietaAtiva().refeicoes[4].grupos.find(g => g.id === 'g-ja-a')).includes('2 · mín. 2')
+     `), true);
+  run(ctx, "escolher('g-ja-a', dietaAtiva().refeicoes[4].grupos[0].opcoes[2].id);");
+  eq('e ela segue somando à vontade, sem precisar reabrir nada',
      run(ctx, "[gruposAbertos.has('g-ja-a'), sel['g-ja-a'].length]"), [true, 3]);
+
+  // Grupo de escolha ÚNICA (ex.: a proteína do café) continua recolhendo ao
+  // bater o mínimo — ali sim, uma escolha feita é literalmente terminar.
+  run(ctx, `
+    abrirRefeicao('r-cafe');
+    escolher('g-cafe-prot', dietaAtiva().refeicoes[0].grupos.find(g => g.id === 'g-cafe-prot').opcoes[0].id);
+  `);
+  eq('escolha única continua recolhendo ao completar',
+     run(ctx, "gruposAbertos.has('g-cafe-prot')"), false);
 }
 
 console.log('\n── Navegação de dias ────────────────────────');
