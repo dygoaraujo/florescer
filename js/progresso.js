@@ -106,26 +106,38 @@ function resumoTreinos() {
   return min ? `${atividades} · ${fmt.duracao(min)}` : atividades;
 }
 
-/** Sono: o que interessa é o horário, não a duração — a clínica pediu
- *  regularidade, e é isso que a lista mostra. */
+/** Sono: a clínica pediu regularidade, por isso o horário de deitar continua
+ *  sendo o que abre a lista. A duração (sonoEfetivoMin, core.js) só existe
+ *  quando o dia seguinte também tem "Acordar" registrado — quando dá, entra
+ *  como reforço ao lado do horário, sem tomar o lugar dele. */
 function listaSono(dias) {
   const logs = DB.get('logSono') || [];
-  const doPeriodo = dias.map(d => ({ data: d, log: logs.find(l => l.data === d) })).filter(x => x.log);
+  const doPeriodo = dias
+    .map(d => ({ data: d, log: logs.find(l => l.data === d), min: sonoEfetivoMin(d) }))
+    .filter(x => x.log);
   if (!doPeriodo.length) {
     return svgVazio('Toque em "Dormir" no fim do dia e o horário fica registrado aqui.');
   }
 
   const media = mediaDeHorario(doPeriodo.map(x => x.log.hora));
+  const duracoes = doPeriodo.map(x => x.min).filter(m => m != null);
+  const mediaMin = duracoes.length ? Math.round(duracoes.reduce((s, m) => s + m, 0) / duracoes.length) : null;
+
   return `
-    <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:14px">
-      <span class="rotulo">Média</span>
+    <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:${mediaMin != null ? 4 : 14}px">
+      <span class="rotulo">Deitou, em média</span>
       <span class="num" style="margin-left:auto;font-family:var(--display);
         font-variation-settings:'SOFT' 100,'opsz' 48;font-size:23px;font-weight:500;color:var(--ceu-forte)">${esc(media)}</span>
     </div>
+    ${mediaMin != null ? `
+    <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:14px">
+      <span class="rotulo">Dormiu, em média</span>
+      <span class="num" style="margin-left:auto;font-weight:600;color:var(--ceu-forte)">${esc(fmt.duracao(mediaMin))}</span>
+    </div>` : ''}
     ${doPeriodo.slice().reverse().map(x => `
       <div class="lista-item" style="min-height:44px;padding:9px 0">
         <span class="li-txt"><span class="li-nome" style="font-size:14px">${esc(fmt.maiuscula(fmt.longa(x.data)))}</span></span>
-        <span class="li-fim" style="font-weight:600;color:var(--ceu-forte)">${esc(x.log.hora)}</span>
+        <span class="li-fim" style="font-weight:600;color:var(--ceu-forte)">${esc(x.log.hora)}${x.min != null ? ` <span style="color:var(--tinta-dim);font-weight:500">· ${esc(fmt.duracao(x.min))}</span>` : ''}</span>
       </div>`).join('')}`;
 }
 

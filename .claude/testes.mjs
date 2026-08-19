@@ -930,6 +930,9 @@ console.log('\n── Nada no dia tem hora marcada ─────────�
 console.log('\n── Água em jejum ───────────────────────────');
 {
   const ctx = novoSandbox();
+  // "Acordar" abre o dia antes até do jejum (ver suíte própria mais abaixo);
+  // desligado aqui pra testar só a ordem que é deste bloco.
+  run(ctx, "const pAc = perfil(); pAc.registrarAcordar = false; DB.set('perfil', pAc);");
 
   eq('abre o dia, antes de tudo', run(ctx, "itensDoDia(hoje())[0].tipo"), 'jejum');
   eq('começa pendente', run(ctx, `
@@ -994,6 +997,7 @@ console.log('\n── Água em jejum ──────────────�
 console.log('\n── A extra entra na sequência, não no relógio ─');
 {
   const ctx = novoSandbox();
+  run(ctx, "const p = perfil(); p.registrarAcordar = false; DB.set('perfil', p);");
 
   // O caso que o Rodrigo simulou: 22h no relógio, mas o café ainda não foi feito.
   // A extra aconteceu ANTES do café na vida dela, e é ali que ela tem que entrar.
@@ -1416,6 +1420,89 @@ console.log('\n── Treino em qualquer dia ───────────�
   eq('domingo sem treino: exercício sai da nota (null), não vira falta', run(ctx, `
     notaDoDia('${domingo}').partes.exercicio;
   `), null);
+}
+
+console.log('\n── Treino: horário editável reordena o fio ──');
+{
+  const ctx = novoSandbox();
+
+  run(ctx, `
+    DB.push('logExercicios', {id: uid(), data: hoje(), tipo: 'Caminhada', duracao: 30, distancia: null, hora: '20:00', obs: ''});
+  `);
+  eq('a posição no fio segue a hora registrada, não o padrão do plano', run(ctx, `
+    itensDoDia(hoje()).find(i => i.tipo === 'treino').hora;
+  `), '20:00');
+  eq('e por isso entra depois do jantar', run(ctx, `
+    const itens = itensDoDia(hoje());
+    itens.findIndex(i => i.tipo === 'treino') > itens.findIndex(i => i.nome === 'Jantar');
+  `), true);
+
+  const logId = run(ctx, `DB.get('logExercicios')[0].id`);
+  run(ctx, `definirHoraAtividade('05:30', '${logId}');`);
+  eq('corrigida a hora pela tela, o registro grava a nova hora', run(ctx, `
+    DB.get('logExercicios')[0].hora;
+  `), '05:30');
+  eq('e o item sobe pro início do fio, antes do café', run(ctx, `
+    const itens2 = itensDoDia(hoje());
+    itens2.findIndex(i => i.tipo === 'treino') < itens2.findIndex(i => i.nome === 'Café da manhã');
+  `), true);
+  eq('a coluna de horário no fio mostra a hora nova', run(ctx, `
+    horaVisivel(itensDoDia(hoje()).find(i => i.tipo === 'treino'));
+  `), '05:30');
+
+  // Duas atividades no mesmo dia: o fio se posiciona pela mais cedo das duas
+  run(ctx, `
+    DB.push('logExercicios', {id: uid(), data: hoje(), tipo: 'Yoga', duracao: 20, distancia: null, hora: '21:00', obs: ''});
+  `);
+  eq('com 2 atividades, o fio segue a mais cedo das duas', run(ctx, `
+    itensDoDia(hoje()).find(i => i.tipo === 'treino').hora;
+  `), '05:30');
+}
+
+console.log('\n── Acordar e sono efetivo ────────────────────');
+{
+  const ctx = novoSandbox();
+  const ONTEM = run(ctx, 'somaDias(hoje(), -1)');
+
+  eq('sem os dois lados registrados, não existe sono efetivo', run(ctx, `
+    sonoEfetivoMin('${ONTEM}');
+  `), null);
+
+  // Deitou ontem às 23:00
+  run(ctx, `mudarDia(-1); abrirSono(); definirSono('23:00'); confirmarSono();`);
+  eq('só com a hora de deitar, ainda não dá pra calcular', run(ctx, `sonoEfetivoMin('${ONTEM}')`), null);
+
+  // Acordou hoje às 07:00
+  run(ctx, `irParaHoje(); abrirAcordar(); definirAcordar('07:00'); confirmarAcordar();`);
+  eq('com os dois lados, calcula as 8h de sono', run(ctx, `sonoEfetivoMin('${ONTEM}')`), 8 * 60);
+  eq('e aparece formatado no detalhe do item Acordar no fio', run(ctx, `
+    detalheItem(itensDoDia(hoje()).find(i => i.tipo === 'acordar'));
+  `), '8h00');
+  eq('"Acordar" some de "pendentes" assim que registrado', run(ctx, `
+    itensDoDia(hoje()).find(i => i.tipo === 'acordar').estado;
+  `), 'feito');
+
+  // Virou a madrugada: deitou 00:30 (regra do diaDoSono bucketa pro dia anterior)
+  run(ctx, `DB.set('logSono', [{id: uid(), data: '${ONTEM}', hora: '00:30'}]);`);
+  eq('deitar de madrugada (< 5h) conta a partir do dia seguinte', run(ctx, `
+    sonoEfetivoMin('${ONTEM}');
+  `), 6 * 60 + 30);
+
+  eq('desmarcar tira o registro', run(ctx, `
+    irParaHoje(); abrirAcordar(); desmarcarAcordar();
+    DB.get('logAcordar').length;
+  `), 0);
+  eq('e sem "Acordar", o sono efetivo some de novo', run(ctx, `sonoEfetivoMin('${ONTEM}')`), null);
+
+  eq('desligar nos Ajustes tira "Acordar" do fio', run(ctx, `
+    const pA = perfil(); pA.registrarAcordar = false; DB.set('perfil', pA);
+    itensDoDia(hoje()).some(i => i.tipo === 'acordar');
+  `), false);
+
+  eq('"Acordar" não entra na nota do dia — não pune nem pontua', run(ctx, `
+    const pA2 = perfil(); pA2.registrarAcordar = true; DB.set('perfil', pA2);
+    notaDoDia(hoje()).partes.acordar === undefined;
+  `), true);
 }
 
 console.log(`\n${falhou ? '✗' : '✓'} ${ok} passaram, ${falhou} falharam\n`);

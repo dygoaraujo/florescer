@@ -115,6 +115,15 @@ RENDER.ajustes = function () {
           </div>
         </div>
       </div>
+      <div class="campo" style="margin-top:10px;margin-bottom:0">
+        <label>Registrar a hora de acordar</label>
+        <p style="font-size:12px;color:var(--tinta-fraca);line-height:1.5;margin:-4px 0 8px">
+          Junto com "Dormir", calcula quanto tempo você dormiu.</p>
+        <div class="toggles">
+          <button class="toggle ${p.registrarAcordar ? 'on' : ''}" onclick="salvarPerfil('registrarAcordar', ${!p.registrarAcordar})">
+            ${p.registrarAcordar ? 'Sim' : 'Não'}</button>
+        </div>
+      </div>
     </div>
 
     <div class="sec"><h2>Lembretes</h2></div>
@@ -617,6 +626,7 @@ function horariosDoDia() {
   const p = perfil();
   if ((p.diasExercicio || []).length) linhas.push({ hora: p.horaExercicio || '18:00', o: 'Exercício' });
   if (p.registrarSono) linhas.push({ hora: p.horaSono || '23:00', o: 'Dormir' });
+  if (p.registrarAcordar) linhas.push({ hora: p.horaAcordar || '07:00', o: 'Acordar' });
   return linhas.sort((a, b) => minutosDe(a.hora) - minutosDe(b.hora));
 }
 

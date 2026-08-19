@@ -44,7 +44,13 @@ function itensDoDia(data) {
   const itens = [];
   const dieta = dietaAtiva();
 
-  // Abre o dia, antes de tudo — é o que "em jejum" quer dizer.
+  // Abre o dia — antes até do jejum, ela acorda primeiro. Junto com o
+  // "Dormir" da noite anterior fecha a conta do sono efetivo (sonoEfetivoMin).
+  if (perfil().registrarAcordar) itens.push({
+    tipo: 'acordar', id: 'acordar', hora: '00:00', nome: 'Acordar',
+  });
+
+  // Logo em seguida — é o que "em jejum" quer dizer.
   if (perfil().registrarJejum) itens.push({
     tipo: 'jejum', id: 'jejum', hora: '00:01', nome: 'Água em jejum',
   });
@@ -87,6 +93,7 @@ function itensDoDia(data) {
   const logM = (DB.get('logMedicamentos') || []).filter(l => l.data === data);
   const logE = (DB.get('logExercicios') || []).filter(l => l.data === data);
   const logS = (DB.get('logSono') || []).filter(l => l.data === data);
+  const logAc = (DB.get('logAcordar') || []).filter(l => l.data === data);
 
   itens.forEach(i => {
     if (i.tipo === 'refeicao') {
@@ -105,8 +112,16 @@ function itensDoDia(data) {
       // vira a "próxima coisa a fazer" nem impede o dia de fechar como
       // completo, mas o item continua ali, tocável, se ela quiser registrar.
       i.estado = logE.length ? 'feito' : (ehDiaDeTreino(data) ? 'pendente' : 'opcional');
+      // Já registrado? O lugar dele no fio é a hora que ela treinou de fato
+      // (a mais cedo, se treinou 2x), não o horário padrão do plano — senão
+      // corrigir a hora não mudaria nada na linha do tempo.
+      const horasTreino = logE.map(l => l.hora).filter(Boolean).sort();
+      if (horasTreino.length) i.hora = horasTreino[0];
     } else if (i.tipo === 'dormir') {
       i.log = logS[0] || null;
+      i.estado = i.log ? 'feito' : 'pendente';
+    } else if (i.tipo === 'acordar') {
+      i.log = logAc[0] || null;
       i.estado = i.log ? 'feito' : 'pendente';
     } else if (i.tipo === 'jejum') {
       i.log = jejumDoDia(data);
@@ -223,6 +238,7 @@ function iconeItem(i) {
   if (i.tipo === 'treino')   return IC.treino;
   if (i.tipo === 'sessao')   return IC.sessao;
   if (i.tipo === 'dormir')   return IC.lua;
+  if (i.tipo === 'acordar')  return IC.sol;
   if (i.tipo === 'jejum')    return IC.agua;
   return i.ref && i.ref.forma === 'gotas' ? IC.gota : IC.capsula;
 }
@@ -234,6 +250,7 @@ function corDoItem(i) {
   if (i.tipo === 'treino')  return 'cat-treino';
   if (i.tipo === 'sessao')  return 'cat-sessao';
   if (i.tipo === 'dormir')  return 'cat-dormir';
+  if (i.tipo === 'acordar') return 'cat-dormir';  // mesma categoria: os dois lados do sono
   if (i.tipo === 'jejum')   return 'cat-agua';
   return 'cat-refeicao';
 }
@@ -260,6 +277,10 @@ function detalheItem(i) {
   if (i.tipo === 'treino') {
     const min = (i.logs || []).reduce((s, l) => s + (l.duracao || 0), 0);
     return min ? fmt.duracao(min) : '';
+  }
+  if (i.tipo === 'acordar' && i.log) {
+    const min = sonoEfetivoMin(somaDias(diaSelecionado, -1));
+    return min != null ? fmt.duracao(min) : '';
   }
   return '';
 }
@@ -310,6 +331,9 @@ function cardAgoraHTML(i) {
   } else if (i.tipo === 'jejum') {
     oque = 'Água pura, antes do café e de qualquer outra coisa.';
     acoes = `<button class="btn btn-cheio btn-ceu" onclick="abrirJejum()">Bebi em jejum</button>`;
+  } else if (i.tipo === 'acordar') {
+    oque = 'Junto com o "Dormir" de ontem, o app calcula quanto tempo você dormiu.';
+    acoes = `<button class="btn btn-cheio" style="background:var(--tinta-dim);color:#fff" onclick="abrirAcordar()">Acordei agora</button>`;
   } else {
     const etapa = etapaSessao(i.ref);
     oque = etapa === 'chegada'
@@ -382,6 +406,7 @@ function abrirItem(tipo, id) {
   if (tipo === 'remedio')        return abrirMedicamento(id);
   if (tipo === 'treino')         return abrirExercicio();
   if (tipo === 'dormir')         return abrirSono();
+  if (tipo === 'acordar')        return abrirAcordar();
   return abrirSessao(id);
 }
 
@@ -586,6 +611,97 @@ function registrarSono(hora) {
 
 function desmarcarSono() {
   DB.set('logSono', (DB.get('logSono') || []).filter(l => l.data !== diaSonoAlvo()));
+  fecharSheet();
+  RENDER.hoje();
+}
+
+// ══ ACORDAR ═══════════════════════════════════════════════════
+// O outro lado do sono: junto com o "Dormir" do dia anterior, fecha a conta
+// de quanto tempo ela realmente dormiu (sonoEfetivoMin, em core.js). Sem a
+// regra da madrugada do Dormir — acordar de manhã não tem ambiguidade de
+// qual dia é.
+let acordarHora = null;
+
+function abrirAcordar() {
+  const data = diaSelecionado;
+  const log = (DB.get('logAcordar') || []).find(l => l.data === data);
+  acordarHora = log ? log.hora : horaInicial(perfil().horaAcordar || '07:00');
+
+  abrirSheet('<div class="sheet-alca"></div><div id="acordar-cx"></div>', () => RENDER.hoje());
+  renderAcordar();
+}
+
+function renderAcordar() {
+  const cx = document.getElementById('acordar-cx');
+  if (!cx) return;
+  const data = diaSelecionado;
+  const log = (DB.get('logAcordar') || []).find(l => l.data === data);
+  const agora = horaLocal();
+  const min = sonoEfetivoMin(somaDias(data, -1));
+
+  const dica = min != null ? `Você dormiu ${fmt.duracao(min)}. 🌙`
+    : log ? `Você registrou que acordou às ${esc(log.hora)}.`
+    : diaSelecionado === hoje() ? `São ${esc(agora)} agora.`
+    : `${esc(fmt.maiuscula(fmt.longa(data)))}.`;
+
+  cx.innerHTML = `
+    <div class="sheet-cabeca">
+      <div style="flex:1;min-width:0">
+        <h2>Bom dia ☀️</h2>
+        <div class="dica">${dica}</div>
+      </div>
+      <button class="sheet-x" onclick="fecharSheet()" aria-label="Fechar">✕</button>
+    </div>
+
+    <div class="sheet-corpo">
+      <div class="sono-relogio">
+        <button class="peso-btn" onclick="ajustarAcordar(-5)" aria-label="5 minutos antes">−</button>
+        ${horaToqueHTML(acordarHora, 'definirAcordar')}
+        <button class="peso-btn" onclick="ajustarAcordar(5)" aria-label="5 minutos depois">+</button>
+      </div>
+      <p class="sono-obs">${acordarHora === agora
+        ? 'Se já faz um tempo que você acordou, toque na hora para escolher outra.'
+        : 'Ajustado. Toque na hora para escolher outra.'}
+        ${min == null && !log ? ' Marque também a hora de dormir de ontem pra ver quanto tempo você dormiu.' : ''}</p>
+    </div>
+
+    <div class="sheet-pe">
+      <button class="btn btn-cheio btn-ceu" style="width:100%" onclick="confirmarAcordar()">
+        ${log ? `Salvar ${esc(acordarHora)}` : 'Acordei agora'}
+      </button>
+      ${log ? `<button class="link-fraco" onclick="desmarcarAcordar()">Desmarcar</button>` : ''}
+    </div>`;
+}
+
+function ajustarAcordar(delta) {
+  const m = (minutosDe(acordarHora) + delta + 24 * 60) % (24 * 60);
+  acordarHora = `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+  renderAcordar();
+}
+
+function definirAcordar(v) {
+  if (!v) return;
+  acordarHora = v;
+  renderAcordar();
+}
+
+function confirmarAcordar() {
+  registrarAcordar(acordarHora);
+  fecharSheet();
+}
+
+function registrarAcordar(hora) {
+  const data = diaSelecionado;
+  const logs = (DB.get('logAcordar') || []).filter(l => l.data !== data);
+  const h = hora || horaLocal();
+  logs.push({ id: uid(), data, hora: h });
+  DB.set('logAcordar', logs);
+  toast(`Bom dia ☀️ · acordou às ${h}`);
+  RENDER.hoje();
+}
+
+function desmarcarAcordar() {
+  DB.set('logAcordar', (DB.get('logAcordar') || []).filter(l => l.data !== diaSelecionado));
   fecharSheet();
   RENDER.hoje();
 }
@@ -1435,12 +1551,18 @@ function renderExercicio() {
         </div>
         ${feitos.map(l => `
           <div class="atividade">
-            <span class="no-cat" style="color:var(--lavanda-forte)">${IC.treino}</span>
-            <span class="atividade-txt">
-              <span class="atividade-nome">${esc(l.tipo)}</span>
-              <span class="atividade-sub">${esc([fmt.duracao(l.duracao), fmt.km(l.distancia), l.hora].filter(Boolean).join(' · '))}</span>
-            </span>
-            <button class="atividade-x" onclick="removerAtividade('${esc(l.id)}')" aria-label="Remover">✕</button>
+            <div class="atividade-topo">
+              <span class="no-cat" style="color:var(--lavanda-forte)">${IC.treino}</span>
+              <span class="atividade-txt">
+                <span class="atividade-nome">${esc(l.tipo)}</span>
+                <span class="atividade-sub">${esc([fmt.duracao(l.duracao), fmt.km(l.distancia)].filter(Boolean).join(' · '))}</span>
+              </span>
+              <button class="atividade-x" onclick="removerAtividade('${esc(l.id)}')" aria-label="Remover">✕</button>
+            </div>
+            <div class="hora-registro" style="justify-content:flex-start;margin-top:8px">
+              <span class="hora-registro-lbl">Feito às</span>
+              ${horaToqueHTML(l.hora || horaInicial(perfil().horaExercicio || '18:00'), 'definirHoraAtividade', '', `'${esc(l.id)}'`)}
+            </div>
           </div>`).join('')}
       </div>` : ''}
 
@@ -1529,6 +1651,21 @@ function confirmarExercicio() {
   // Fica aberto: se ela fez duas coisas, a segunda já entra em seguida.
   exercicioSel = null;
   exercicioKm = 0;
+  renderExercicio();
+}
+
+/** Ela pode ajustar o horário de uma atividade já registrada — e como o
+ *  treino entra no fio pela hora mais cedo das atividades do dia (ver
+ *  itensDoDia), corrigir aqui move o card na linha do tempo também. */
+function definirHoraAtividade(v, id) {
+  if (!v) return;
+  const logs = DB.get('logExercicios') || [];
+  const l = logs.find(x => x.id === id);
+  if (l) {
+    l.hora = v;
+    DB.set('logExercicios', logs);
+    toast(`Horário atualizado para ${v}`);
+  }
   renderExercicio();
 }
 

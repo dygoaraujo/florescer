@@ -85,6 +85,7 @@ const IC = {
   gota:     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><path d="M12 3.5s5.5 6 5.5 9.7a5.5 5.5 0 0 1-11 0C6.5 9.5 12 3.5 12 3.5z"/></svg>`,
   capsula:  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><rect x="1.8" y="8.6" width="20.4" height="6.8" rx="3.4" transform="rotate(-45 12 12)"/><path d="M9.6 9.6l4.8 4.8"/></svg>`,
   lua:      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><path d="M20 14.5A8.2 8.2 0 0 1 9.5 4 8.5 8.5 0 1 0 20 14.5z"/></svg>`,
+  sol:      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><circle cx="12" cy="12" r="4.3"/><path d="M12 2.5v2.6M12 18.9v2.6M4.6 4.6l1.8 1.8M17.6 17.6l1.8 1.8M2.5 12h2.6M18.9 12h2.6M4.6 19.4l1.8-1.8M17.6 6.4l1.8-1.8"/></svg>`,
   check:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M4.5 12.5l5 5 10-11"/></svg>`,
   seta:     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M9 5l7 7-7 7"/></svg>`,
   mais:     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" width="17" height="17"><path d="M12 5v14M5 12h14"/></svg>`,
@@ -229,6 +230,8 @@ const SEED = {
     horaExercicio: '18:00',
     registrarSono: true,
     horaSono: '23:00',
+    registrarAcordar: true,
+    horaAcordar: '07:00',
     registrarJejum: true,               // primeira coisa do dia: água pura
     mlJejum: 300,                       // último valor que ela usou, pra abrir já certo
     inicioTratamento: dataLocal(),
@@ -355,7 +358,7 @@ const ID_DIETA_CLINICA = 'dieta-clinica-v' + SEED_VERSAO;
 const CHAVES_DADOS = [
   'perfil', 'dietas', 'medicamentos', 'exercicios', 'procedimentos',
   'logRefeicoes', 'logAgua', 'logMedicamentos', 'logExercicios',
-  'pesos', 'sessoes', 'scores', 'relatorios', 'conquistas', 'logSono', 'seedVersao',
+  'pesos', 'sessoes', 'scores', 'relatorios', 'conquistas', 'logSono', 'logAcordar', 'seedVersao',
 ];
 
 function iniciarDB() {
@@ -365,7 +368,7 @@ function iniciarDB() {
   if (!DB.get('exercicios'))    DB.set('exercicios', SEED.exercicios);
   if (!DB.get('procedimentos')) DB.set('procedimentos', SEED.procedimentos);
   ['logRefeicoes', 'logAgua', 'logMedicamentos', 'logExercicios',
-   'pesos', 'sessoes', 'scores', 'relatorios', 'conquistas', 'logSono']
+   'pesos', 'sessoes', 'scores', 'relatorios', 'conquistas', 'logSono', 'logAcordar']
     .forEach(k => { if (!DB.get(k)) DB.set(k, []); });
 
   // Completa campos que possam faltar num perfil salvo por versão antiga
@@ -511,6 +514,28 @@ const aguaDoDia = data => (DB.get('logAgua') || []).filter(l => l.data === data)
  *  especial, e sincroniza junto com o resto — nada pra dessincronizar. */
 const jejumDoDia = data =>
   (DB.get('logAgua') || []).find(l => l.data === data && l.origem === 'jejum') || null;
+
+/** Sono efetivo = quanto tempo passou entre deitar e acordar. O log de
+ *  "Dormir" de um dia representa a NOITE daquele dia (ela deita perto da
+ *  meia-noite, às vezes já depois — `diaDoSono()` bucketa isso pro dia que
+ *  estava terminando); quem fecha a conta é o "Acordar" do dia SEGUINTE.
+ *  Só existe conta quando os dois lados estão registrados — metade da
+ *  informação não vira palpite, some sem mostrar nada. */
+function sonoEfetivoMin(diaDormiu) {
+  const logD = (DB.get('logSono') || []).find(l => l.data === diaDormiu);
+  if (!logD) return null;
+  const diaAcordar = somaDias(diaDormiu, 1);
+  const logA = (DB.get('logAcordar') || []).find(l => l.data === diaAcordar);
+  if (!logA) return null;
+
+  // Hora de deitar >= 5h da manhã: aconteceu no próprio dia de `diaDormiu`.
+  // Hora < 5h: já é a madrugada seguinte (mesma regra de diaDoSono/hoje.js).
+  const offsetDeitar = minutosDe(logD.hora) >= 5 * 60 ? 0 : 1;
+  const deitarAbs = offsetDeitar * 1440 + minutosDe(logD.hora);
+  const acordarAbs = 1440 + minutosDe(logA.hora);     // sempre o dia seguinte
+  const min = acordarAbs - deitarAbs;
+  return min > 0 ? min : null;                        // hora inválida não vira sono negativo
+}
 
 // ══ NOTA DO DIA ════════════════════════════════════════════════
 // Refeições 40 · água 25 · medicamentos 20 · exercício 15.
@@ -715,9 +740,11 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
  *  texto (o input nunca morre enquanto ela mexe nele) e o valor só é aplicado
  *  de fato quando ela toca em "Confirmar horário", embaixo do seletor — recebe
  *  o nome de uma função global (ex.: 'definirHoraJejum'), chamada com o valor
- *  atual do input só nesse toque. */
+ *  atual do input só nesse toque. `argsExtra` deixa passar um segundo
+ *  argumento literal (ex.: o id da atividade, quando um dia pode ter mais de
+ *  uma) — já vem pronto com aspas, tipo `'${esc(l.id)}'`. */
 let _horaToqueSeq = 0;
-function horaToqueHTML(valor, fnNome, cls = '') {
+function horaToqueHTML(valor, fnNome, cls = '', argsExtra = '') {
   const id = 'ht' + (_horaToqueSeq++);
   return `<div class="hora-toque-cx">
     <span class="hora-toque ${cls}">
@@ -726,7 +753,7 @@ function horaToqueHTML(valor, fnNome, cls = '') {
              oninput="document.getElementById('${id}v').textContent = this.value">
     </span>
     <button type="button" class="hora-confirmar"
-      onclick="${fnNome}(document.getElementById('${id}i').value)">✓ Confirmar horário</button>
+      onclick="${fnNome}(document.getElementById('${id}i').value${argsExtra ? ', ' + argsExtra : ''})">✓ Confirmar horário</button>
   </div>`;
 }
 
