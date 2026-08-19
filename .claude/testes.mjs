@@ -1459,6 +1459,81 @@ console.log('\n── Treino: horário editável reordena o fio ──');
   `), '05:30');
 }
 
+console.log('\n── Treino: escolher o horário ao registrar ──');
+{
+  const ctx = novoSandbox();
+
+  // Editando um dia passado, o padrão não é "agora" — é o mesmo padrão que
+  // todo outro registro usa (horaInicial).
+  run(ctx, `mudarDia(-1); abrirExercicio();`);
+  eq('abre com o horário padrão do plano, ajustável antes de confirmar',
+     run(ctx, 'exercicioHora'), '18:00');
+
+  run(ctx, `
+    selecionarExercicio('Caminhada');
+    definirHoraExercicio('06:45');
+    confirmarExercicio();
+  `);
+  eq('registra com a hora que ela escolheu, não com o padrão do plano',
+     run(ctx, "DB.get('logExercicios')[0].hora"), '06:45');
+  eq('e o fio já nasce na posição certa, sem precisar corrigir depois', run(ctx, `
+    const ONTEM = somaDias(hoje(), -1);
+    itensDoDia(ONTEM).find(i => i.tipo === 'treino').hora;
+  `), '06:45');
+
+  // Uma segunda atividade no mesmo dia continua com um horário fresco pra
+  // ajustar, não herdado da primeira
+  run(ctx, `abrirExercicio();`);
+  eq('a próxima atividade não herda a hora da anterior', run(ctx, `
+    exercicioHora !== '06:45' || exercicioHora === '18:00';
+  `), true);
+}
+
+console.log('\n── Treino: marcar que não treinou ────────────');
+{
+  const ctx = novoSandbox();
+  run(ctx, `const p = perfil(); p.diasExercicio = [0,1,2,3,4,5,6]; DB.set('perfil', p);`);
+
+  eq('começa sem marca nenhuma', run(ctx, 'treinoPuladoDoDia(hoje())'), false);
+  eq('dia programado, sem registrar nada: pendente', run(ctx, `
+    itensDoDia(hoje()).find(i => i.tipo === 'treino').estado;
+  `), 'pendente');
+
+  run(ctx, `abrirExercicio(); marcarSemTreino();`);
+  eq('marcado: grava o dia', run(ctx, 'treinoPuladoDoDia(hoje())'), true);
+  eq('e o item vira "pulado" — risca no fio, sai de pendentes', run(ctx, `
+    itensDoDia(hoje()).find(i => i.tipo === 'treino').estado;
+  `), 'pulado');
+  eq('não sobra em pendentes', run(ctx, `
+    itensDoDia(hoje()).some(i => i.tipo === 'treino' && i.estado === 'pendente');
+  `), false);
+
+  run(ctx, `abrirExercicio(); desmarcarSemTreino();`);
+  eq('desmarcar tira a marca e volta a pendente', run(ctx, `
+    [treinoPuladoDoDia(hoje()), itensDoDia(hoje()).find(i => i.tipo === 'treino').estado];
+  `), [false, 'pendente']);
+
+  // Mudou de ideia e treinou de verdade DEPOIS de ter marcado "não treinei"
+  run(ctx, `abrirExercicio(); marcarSemTreino();`);
+  eq('marcado de novo', run(ctx, 'treinoPuladoDoDia(hoje())'), true);
+  run(ctx, `
+    abrirExercicio();
+    selecionarExercicio('Caminhada');
+    confirmarExercicio();
+  `);
+  eq('registrar de verdade tira a marca sozinho — não fica contraditório',
+     run(ctx, 'treinoPuladoDoDia(hoje())'), false);
+  eq('e o item vira feito', run(ctx, `
+    itensDoDia(hoje()).find(i => i.tipo === 'treino').estado;
+  `), 'feito');
+
+  eq('"não treinei" não pune nem pontua — mesma regra de sempre', run(ctx, `
+    DB.set('logExercicios', []);
+    marcarSemTreino();
+    notaDoDia(hoje()).partes.exercicio;
+  `), 0);   // dia PROGRAMADO sem treino conta 0 na parte de exercício, marcado ou não — só o fio muda
+}
+
 console.log('\n── Acordar e sono efetivo ────────────────────');
 {
   const ctx = novoSandbox();

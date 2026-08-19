@@ -357,7 +357,7 @@ const ID_DIETA_CLINICA = 'dieta-clinica-v' + SEED_VERSAO;
 
 const CHAVES_DADOS = [
   'perfil', 'dietas', 'medicamentos', 'exercicios', 'procedimentos',
-  'logRefeicoes', 'logAgua', 'logMedicamentos', 'logExercicios',
+  'logRefeicoes', 'logAgua', 'logMedicamentos', 'logExercicios', 'logTreinoPulado',
   'pesos', 'sessoes', 'scores', 'relatorios', 'conquistas', 'logSono', 'logAcordar', 'seedVersao',
 ];
 
@@ -367,7 +367,7 @@ function iniciarDB() {
   if (!DB.get('medicamentos'))  DB.set('medicamentos', SEED.medicamentos);
   if (!DB.get('exercicios'))    DB.set('exercicios', SEED.exercicios);
   if (!DB.get('procedimentos')) DB.set('procedimentos', SEED.procedimentos);
-  ['logRefeicoes', 'logAgua', 'logMedicamentos', 'logExercicios',
+  ['logRefeicoes', 'logAgua', 'logMedicamentos', 'logExercicios', 'logTreinoPulado',
    'pesos', 'sessoes', 'scores', 'relatorios', 'conquistas', 'logSono', 'logAcordar']
     .forEach(k => { if (!DB.get(k)) DB.set(k, []); });
 

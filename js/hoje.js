@@ -94,6 +94,7 @@ function itensDoDia(data) {
   const logE = (DB.get('logExercicios') || []).filter(l => l.data === data);
   const logS = (DB.get('logSono') || []).filter(l => l.data === data);
   const logAc = (DB.get('logAcordar') || []).filter(l => l.data === data);
+  const semTreino = (DB.get('logTreinoPulado') || []).some(l => l.data === data);
 
   itens.forEach(i => {
     if (i.tipo === 'refeicao') {
@@ -111,7 +112,10 @@ function itensDoDia(data) {
       // Dia de descanso e ainda não treinou: 'opcional', não 'pendente' — não
       // vira a "próxima coisa a fazer" nem impede o dia de fechar como
       // completo, mas o item continua ali, tocável, se ela quiser registrar.
-      i.estado = logE.length ? 'feito' : (ehDiaDeTreino(data) ? 'pendente' : 'opcional');
+      // "Não treinei" (semTreino) marca 'pulado' — igual a uma refeição
+      // pulada: some de "pendentes" e risca no fio, sem fingir que ela
+      // esqueceu de responder.
+      i.estado = logE.length ? 'feito' : semTreino ? 'pulado' : (ehDiaDeTreino(data) ? 'pendente' : 'opcional');
       // Já registrado? O lugar dele no fio é a hora que ela treinou de fato
       // (a mais cedo, se treinou 2x), não o horário padrão do plano — senão
       // corrigir a hora não mudaria nada na linha do tempo.
@@ -1508,16 +1512,19 @@ function desmarcarMedicamento(medId) {
 let exercicioSel = null;
 let exercicioMin = 30;                          // duração em minutos
 let exercicioKm = 0;                            // 0 = não informado
+let exercicioHora = null;                       // igual a toda outra hora do app: ajustável antes de confirmar
 
 const DURACOES = [15, 20, 30, 45, 60, 90];
 const DISTANCIAS = [1, 2, 3, 5, 10];
 
 const treinosDoDia = data => (DB.get('logExercicios') || []).filter(l => l.data === data);
+const treinoPuladoDoDia = data => (DB.get('logTreinoPulado') || []).some(l => l.data === data);
 
 function abrirExercicio() {
   exercicioSel = null;
   exercicioMin = 30;
   exercicioKm = 0;
+  exercicioHora = horaInicial(perfil().horaExercicio || '18:00');
 
   abrirSheet(`
     <div class="sheet-alca"></div>
@@ -1630,28 +1637,69 @@ function definirDistancia(k) {
 function renderPeExercicio() {
   const pe = document.getElementById('ex-pe');
   if (!pe) return;
+  const semTreino = treinoPuladoDoDia(diaSelecionado);
+  const jaTemAtividade = treinosDoDia(diaSelecionado).length > 0;
+
   pe.innerHTML = `
+    ${exercicioSel ? `<div class="hora-registro" style="justify-content:flex-start">
+      <span class="hora-registro-lbl">Feito às</span>
+      ${horaToqueHTML(exercicioHora, 'definirHoraExercicio')}
+    </div>` : ''}
     <button class="btn btn-cheio btn-lavanda" style="width:100%${exercicioSel ? '' : ';opacity:.4'}"
       onclick="confirmarExercicio()" ${exercicioSel ? '' : 'disabled'}>
       ${exercicioSel
         ? `Registrar ${esc(fmt.duracao(exercicioMin))} de ${esc(exercicioSel.toLowerCase())}${exercicioKm ? ' · ' + esc(fmt.km(exercicioKm)) : ''}`
         : 'Escolha o tipo de treino'}
-    </button>`;
+    </button>
+    ${jaTemAtividade ? '' : semTreino
+        ? `<button class="link-fraco" onclick="desmarcarSemTreino()">Desmarcar "não treinei"</button>`
+        : `<button class="link-fraco" onclick="marcarSemTreino()">Não treinei ${diaSelecionado === hoje() ? 'hoje' : 'nesse dia'}</button>`}`;
+}
+
+/** Igual à hora de qualquer outro registro: ela escolhe ANTES de confirmar,
+ *  não corrige depois. (A correção depois de já registrado continua existindo
+ *  — ver definirHoraAtividade — pra quando ela só lembra mais tarde.) */
+function definirHoraExercicio(v) {
+  if (!v) return;
+  exercicioHora = v;
+  renderPeExercicio();
 }
 
 function confirmarExercicio() {
   if (!exercicioSel) return;
   DB.push('logExercicios', {
     id: uid(), data: diaSelecionado, tipo: exercicioSel, duracao: exercicioMin,
-    distancia: exercicioKm || null, hora: horaInicial(perfil().horaExercicio || '18:00'), obs: '',
+    distancia: exercicioKm || null, hora: exercicioHora, obs: '',
   });
+  // Treinou de verdade: qualquer "não treinei" marcado nesse dia ficaria
+  // contradizendo o próprio registro, então sai sozinho.
+  DB.set('logTreinoPulado', (DB.get('logTreinoPulado') || []).filter(l => l.data !== diaSelecionado));
   toast(`${exercicioSel} · ${fmt.duracao(exercicioMin)} 💜`);
   checarConquistas();
 
   // Fica aberto: se ela fez duas coisas, a segunda já entra em seguida.
   exercicioSel = null;
   exercicioKm = 0;
+  exercicioHora = horaInicial(perfil().horaExercicio || '18:00');
   renderExercicio();
+}
+
+/** Domingo sem treinar já não pesa na nota (ver 'opcional' em itensDoDia) —
+ *  isto não muda a pontuação, é só ela poder dizer "vi, e não treinei
+ *  mesmo" em vez do dia ficar em branco sem resposta nenhuma. Some sozinho
+ *  se ela registrar uma atividade de verdade depois (ver confirmarExercicio). */
+function marcarSemTreino() {
+  const logs = (DB.get('logTreinoPulado') || []).filter(l => l.data !== diaSelecionado);
+  logs.push({ id: uid(), data: diaSelecionado });
+  DB.set('logTreinoPulado', logs);
+  fecharSheet();
+  RENDER.hoje();
+}
+
+function desmarcarSemTreino() {
+  DB.set('logTreinoPulado', (DB.get('logTreinoPulado') || []).filter(l => l.data !== diaSelecionado));
+  fecharSheet();
+  RENDER.hoje();
 }
 
 /** Ela pode ajustar o horário de uma atividade já registrada — e como o
