@@ -16,6 +16,7 @@ RENDER.progresso = function () {
   const atual = pesoAtual();
   const perdido = (inicial != null && atual != null) ? inicial - atual : null;
   const falta = (p.pesoMeta != null && atual != null) ? atual - p.pesoMeta : null;
+  const ritmo = ritmoPeso();
 
   const notaMedia = dias14.length
     ? Math.round(dias14.reduce((s, d) => s + notaDe(d), 0) / dias14.length) : 0;
@@ -44,6 +45,9 @@ RENDER.progresso = function () {
     <!-- Relatório novo é notícia: sobe pro topo só enquanto ela não abriu. -->
     <div id="aviso-relatorio"></div>
 
+    <div class="sec"><h2>Esta semana</h2><span class="sub">vs. os 7 dias anteriores</span></div>
+    ${comparacaoSemanalHTML()}
+
     <div class="sec"><h2>Peso</h2></div>
     <div class="peso-hero">
       <div class="peso-hero-topo">
@@ -62,6 +66,9 @@ RENDER.progresso = function () {
         : falta != null
           ? `<div class="peso-hero-meta ouro">Você chegou na meta de ${esc(fmt.peso(p.pesoMeta))} ✨</div>`
           : `<div class="peso-hero-meta">Informe o peso desejado em Ajustes para acompanhar o quanto falta.</div>`}
+      ${ritmo != null ? `<p class="peso-hero-ritmo">${Math.abs(ritmo) < 0.05
+          ? 'Peso estável nas últimas 4 semanas.'
+          : `${ritmo > 0 ? 'Perdendo' : 'Ganhando'}, em média, ${esc(fmt.peso(Math.abs(ritmo)))} por semana nas últimas 4 semanas.`}</p>` : ''}
       ${graficoPeso(pesos)}
       ${resumoSessoesHTML()}
       <button class="btn btn-vazio btn-sm peso-hero-btn" onclick="ir('agenda')">Registrar uma pesagem</button>
@@ -72,8 +79,8 @@ RENDER.progresso = function () {
     <div class="sec"><h2>Água</h2><span class="sub">últimos 14 dias</span></div>
     <div class="cartao">${graficoAgua(dias14)}</div>
 
-    <div class="sec"><h2>Aderência</h2><span class="sub">nota de cada dia</span></div>
-    <div class="cartao">${graficoAderencia(dias14)}</div>
+    <div class="sec"><h2>Aderência</h2><span class="sub">últimos ${12 * 7} dias</span></div>
+    <div class="cartao">${heatmapAderencia()}</div>
 
     <div class="sec"><h2>Treinos</h2><span class="sub">${resumoTreinos()}</span></div>
     <div class="cartao">${heatmapTreinos()}</div>
@@ -139,6 +146,62 @@ function listaSono(dias) {
         <span class="li-txt"><span class="li-nome" style="font-size:14px">${esc(fmt.maiuscula(fmt.longa(x.data)))}</span></span>
         <span class="li-fim" style="font-weight:600;color:var(--ceu-forte)">${esc(x.log.hora)}${x.min != null ? ` <span style="color:var(--tinta-dim);font-weight:500">· ${esc(fmt.duracao(x.min))}</span>` : ''}</span>
       </div>`).join('')}`;
+}
+
+// ── Esta semana vs. a anterior ──────────────────────────────────
+// Não espera o relatório de sábado: uma janela sempre viva de 7 dias contra
+// os 7 anteriores, pra ela sentir se está melhorando no MEIO da semana, não
+// só quando o relatório fecha. Rolante (não segunda-a-sábado como o
+// relatório) de propósito — assim funciona igual em qualquer dia da semana.
+function statsPeriodo(dias) {
+  const notaMedia = Math.round(dias.reduce((s, d) => s + notaDe(d), 0) / dias.length);
+  const meta = perfil().metaAgua || 3000;
+  const aguaDias = dias.filter(d => aguaDoDia(d) >= meta).length;
+  const treinoDias = new Set((DB.get('logExercicios') || [])
+    .filter(l => dias.includes(l.data)).map(l => l.data)).size;
+  const refFracoes = dias.map(d => partesDe(d).refeicoes).filter(v => v != null);
+  const refPct = refFracoes.length
+    ? Math.round(refFracoes.reduce((s, v) => s + v, 0) / refFracoes.length * 100) : null;
+  return { notaMedia, aguaDias, treinoDias, refPct };
+}
+
+/** Pastilha de diferença: sobe = folha (bom em qualquer uma dessas 4
+ *  métricas, ao contrário do peso). Desce fica neutro, sem cor de alarme —
+ *  o app não usa vermelho pra não virar cobrança. */
+function pillDelta(delta) {
+  if (delta == null) return '';
+  if (delta === 0) return `<span class="pill">igual</span>`;
+  return `<span class="pill ${delta > 0 ? 'pill-folha' : ''}">${delta > 0 ? '↑' : '↓'} ${Math.abs(delta)}</span>`;
+}
+
+function comparacaoSemanalHTML() {
+  const atual = statsPeriodo(ultimosDias(7));
+  const anterior = statsPeriodo(ultimosDias(14).slice(0, 7));
+  const refDelta = (atual.refPct != null && anterior.refPct != null) ? atual.refPct - anterior.refPct : null;
+
+  return `
+    <div class="kpis">
+      <div class="kpi">
+        <div class="v num">${atual.notaMedia}%</div>
+        <div class="k">nota média</div>
+        ${pillDelta(atual.notaMedia - anterior.notaMedia)}
+      </div>
+      <div class="kpi">
+        <div class="v num">${atual.aguaDias}<small>/7</small></div>
+        <div class="k">água na meta</div>
+        ${pillDelta(atual.aguaDias - anterior.aguaDias)}
+      </div>
+      <div class="kpi">
+        <div class="v num">${atual.treinoDias}<small>/7</small></div>
+        <div class="k">dias de treino</div>
+        ${pillDelta(atual.treinoDias - anterior.treinoDias)}
+      </div>
+      <div class="kpi">
+        <div class="v num">${atual.refPct != null ? atual.refPct + '%' : '—'}</div>
+        <div class="k">refeições</div>
+        ${pillDelta(refDelta)}
+      </div>
+    </div>`;
 }
 
 // ── Utilidades ───────────────────────────────────────────────────
@@ -331,32 +394,42 @@ function graficoAgua(dias) {
 }
 
 // ── Gráfico de aderência ─────────────────────────────────────────
-function graficoAderencia(dias) {
-  const notas = dias.map(notaDe);
-  if (!notas.some(n => n > 0)) return svgVazio('A nota de cada dia aparece aqui conforme você usa o app.');
+/** Era um gráfico de linha de 14 dias; virou um heatmap de 12 semanas
+ *  (mesmo componente visual do heatmap de treino, só que colorido pela nota
+ *  em vez de feito/não-feito). A linha de 14 dias já se repetia com a "média
+ *  de 14 dias" que abre a tela — um heatmap de ~3 meses mostra PADRÃO
+ *  (ela sempre cai no fim de semana? sempre firme na segunda?) que uma linha
+ *  curta não mostra. */
+function heatmapAderencia() {
+  const semanas = 12;
+  const fim = somaDias(hoje(), 6 - ((deData(hoje()).getDay() + 6) % 7));   // domingo desta semana
+  const inicio = somaDias(fim, -(semanas * 7 - 1));
 
-  const mX = 10, mT = 22, mB = 20;
-  const x = i => mX + (i / (dias.length - 1)) * (GW - mX * 2);
-  const y = v => mT + (1 - v / 100) * (GH - mT - mB);
-  const linha = notas.map((n, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(n).toFixed(1)}`).join(' ');
+  const cols = [];
+  for (let s = 0; s < semanas; s++) {
+    const dias = [];
+    for (let d = 0; d < 7; d++) {
+      const data = somaDias(inicio, s * 7 + d);
+      const futuro = data > hoje();
+      const n = futuro ? 0 : notaDe(data);
+      dias.push(`<span class="heat-d ${futuro ? 'fora' : 'nota'}"
+        ${futuro ? '' : `style="opacity:${(.12 + (n / 100) * .88).toFixed(2)}"`}
+        title="${esc(data)} · ${n}%"></span>`);
+    }
+    cols.push(`<div class="heat-col">${dias.join('')}</div>`);
+  }
 
   return `
-    <svg class="grafico" viewBox="0 0 ${GW} ${GH}" role="img" aria-label="Aderência diária">
-      <defs>
-        <linearGradient id="ga" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%"   stop-color="#8A6FC7" stop-opacity=".2"/>
-          <stop offset="100%" stop-color="#8A6FC7" stop-opacity="0"/>
-        </linearGradient>
-      </defs>
-      <line x1="${mX}" y1="${y(NOTA_SEQUENCIA).toFixed(1)}" x2="${GW - mX}" y2="${y(NOTA_SEQUENCIA).toFixed(1)}"
-            stroke="#DED4F2" stroke-width="1.4" stroke-dasharray="5 5"/>
-      <text x="${GW - mX}" y="${(y(NOTA_SEQUENCIA) - 5).toFixed(1)}" text-anchor="end" font-size="10"
-            fill="#B9B0C0" ${FONTE_SVG}>${NOTA_SEQUENCIA}% — o que mantém a sequência</text>
-      <path d="${linha} L${x(dias.length - 1).toFixed(1)},${GH - mB} L${x(0).toFixed(1)},${GH - mB} Z" fill="url(#ga)"/>
-      <path d="${linha}" fill="none" stroke="#8A6FC7" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
-      ${notas.map((n, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(n).toFixed(1)}" r="${i === notas.length - 1 ? 5 : 2.8}"
-          fill="#fff" stroke="#8A6FC7" stroke-width="2.2"/>`).join('')}
-    </svg>`;
+    <div class="heat">${cols.join('')}</div>
+    <div style="display:flex;align-items:center;gap:5px;margin-top:12px;font-size:12px;color:var(--tinta-dim)">
+      <span>menos</span>
+      <span class="heat-d legenda nota" style="opacity:.15"></span>
+      <span class="heat-d legenda nota" style="opacity:.4"></span>
+      <span class="heat-d legenda nota" style="opacity:.65"></span>
+      <span class="heat-d legenda nota" style="opacity:1"></span>
+      <span>mais</span>
+      <span style="margin-left:auto">${NOTA_SEQUENCIA}%+ mantém a sequência</span>
+    </div>`;
 }
 
 // ── Heatmap de treinos ───────────────────────────────────────────
@@ -424,6 +497,26 @@ function kgPerdidos() {
   const inicial = p.pesoInicial ?? (ps[0]?.peso ?? null);
   const atual = pesoAtual();
   return (inicial != null && atual != null) ? inicial - atual : 0;
+}
+
+/** "Perdendo, em média, 0,8 kg por semana" — o total desde o início já mostra
+ *  o resultado acumulado; isto mostra o RITMO recente, que anima mesmo quando
+ *  o número acumulado já é grande e para de surpreender. Só pesagens
+ *  comparáveis entram na conta (sem saída de sessão — é água, não gordura,
+ *  mesma razão de resumoSessoesHTML). Exige pelo menos 10 dias de intervalo
+ *  entre a primeira e a última da janela, senão duas pesagens em dias
+ *  seguidos virariam um ritmo de mentira. */
+function ritmoPeso() {
+  const JANELA_DIAS = 28;
+  const desde = somaDias(hoje(), -JANELA_DIAS);
+  const comparaveis = pesosOrdenados().filter(p => p.origem !== 'sessao-saida' && p.data >= desde);
+  if (comparaveis.length < 2) return null;
+
+  const primeira = comparaveis[0], ultima = comparaveis[comparaveis.length - 1];
+  const dias = (deData(ultima.data) - deData(primeira.data)) / 86400000;
+  if (dias < 10) return null;
+
+  return (primeira.peso - ultima.peso) / (dias / 7);   // kg por semana; negativo = ganhando
 }
 
 function diasDeAgua() {

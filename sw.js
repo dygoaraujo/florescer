@@ -4,7 +4,7 @@
    direto: o sync precisa falhar de verdade quando não há conexão.
    ════════════════════════════════════════════════════════════════ */
 
-const CACHE = 'florescer-v18';
+const CACHE = 'florescer-v19';
 const CASCA = [
   './', './index.html', './style.css', './manifest.webmanifest',
   './js/core.js', './js/hoje.js', './js/alimentacao.js', './js/progresso.js',

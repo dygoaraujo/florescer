@@ -1505,5 +1505,114 @@ console.log('\n── Acordar e sono efetivo ───────────�
   `), true);
 }
 
+console.log('\n── Progresso: ritmo do peso ──────────────────');
+{
+  const ctx = novoSandbox();
+  eq('sem pesagem nenhuma, não existe ritmo', run(ctx, 'ritmoPeso()'), null);
+
+  run(ctx, `DB.set('pesos', [{id:'p1', data: somaDias(hoje(), -5), peso: 80, origem:'casa', sessaoId:null}]);`);
+  eq('com só 1 pesagem, ainda não dá', run(ctx, 'ritmoPeso()'), null);
+
+  run(ctx, `DB.set('pesos', [
+    {id:'p1', data: somaDias(hoje(), -5), peso: 80, origem:'casa', sessaoId:null},
+    {id:'p2', data: hoje(), peso: 79, origem:'casa', sessaoId:null},
+  ]);`);
+  eq('2 pesagens muito perto (menos de 10 dias): não vira ritmo, seria ruído',
+     run(ctx, 'ritmoPeso()'), null);
+
+  run(ctx, `DB.set('pesos', [
+    {id:'p1', data: somaDias(hoje(), -28), peso: 84, origem:'casa', sessaoId:null},
+    {id:'p2', data: hoje(), peso: 80, origem:'casa', sessaoId:null},
+  ]);`);
+  eq('4 kg em 4 semanas: 1 kg por semana', run(ctx, 'ritmoPeso()'), 1);
+
+  run(ctx, `
+    const ps = DB.get('pesos');
+    ps.push({id:'p3', data: somaDias(hoje(), -14), peso: 60, origem:'sessao-saida', sessaoId:'s1'});
+    DB.set('pesos', ps);
+  `);
+  eq('saída da sessão não entra na conta — é água, não gordura',
+     run(ctx, 'ritmoPeso()'), 1);
+
+  run(ctx, `DB.set('pesos', [
+    {id:'p1', data: somaDias(hoje(), -28), peso: 80, origem:'casa', sessaoId:null},
+    {id:'p2', data: hoje(), peso: 82, origem:'casa', sessaoId:null},
+  ]);`);
+  eq('subiu de peso: ritmo negativo, sem cor de alarme (só o número diz)',
+     run(ctx, 'ritmoPeso()'), -0.5);
+}
+
+console.log('\n── Progresso: esta semana vs a anterior ──────');
+{
+  const ctx = novoSandbox();
+
+  eq('sem delta, a pastilha não aparece', run(ctx, 'pillDelta(null)'), '');
+  eq('delta zero: "igual", sem seta', run(ctx, 'pillDelta(0)').includes('igual'), true);
+  eq('melhorou: seta pra cima, cor de bom (pill-folha)',
+     run(ctx, 'pillDelta(5)'), '<span class="pill pill-folha">↑ 5</span>');
+  eq('piorou: seta pra baixo, pastilha neutra — sem cor de alarme',
+     run(ctx, 'pillDelta(-3)'), '<span class="pill ">↓ 3</span>');
+
+  // Uma janela inteira no passado (só assim dá pra travar tudo via `scores`
+  // congelado — hoje() sempre calcula ao vivo, de propósito). `var` (não
+  // `const`) porque cada `run()` roda no MESMO escopo de topo deste `ctx` —
+  // um `const` de mesmo nome em duas chamadas quebraria com "already declared".
+  const dias = run(ctx, "ultimosDias(14).slice(0, 7)");
+  run(ctx, `
+    var DIAS = ${JSON.stringify(dias)};
+    DB.set('scores', DIAS.map((d, i) => ({ data: d, nota: i < 4 ? 80 : 40, partes: { refeicoes: i < 4 ? 1 : 0.5 } })));
+    DB.set('logAgua', DIAS.slice(0, 3).map(d => ({ id: uid(), data: d, ml: 3500, origem: 'casa' })));
+    DB.set('logExercicios', [
+      { id: uid(), data: DIAS[0], tipo: 'Caminhada', duracao: 30, hora: '18:00' },
+      { id: uid(), data: DIAS[1], tipo: 'Yoga', duracao: 20, hora: '18:00' },
+    ]);
+  `);
+  eq('nota média do período', run(ctx, 'statsPeriodo(DIAS).notaMedia'),
+     Math.round((80 * 4 + 40 * 3) / 7));
+  eq('dias que bateram a meta de água', run(ctx, 'statsPeriodo(DIAS).aguaDias'), 3);
+  eq('dias distintos de treino (2 atividades, dias diferentes)',
+     run(ctx, 'statsPeriodo(DIAS).treinoDias'), 2);
+  eq('% de refeições, média das partes de cada dia', run(ctx, 'statsPeriodo(DIAS).refPct'),
+     Math.round((1 * 4 + 0.5 * 3) / 7 * 100));
+
+  eq('a tela monta os 4 blocos sem quebrar', run(ctx, `
+    (comparacaoSemanalHTML().match(/class="kpi"/g) || []).length;
+  `), 4);
+}
+
+console.log('\n── Progresso: partesDe segue a mesma regra do notaDe ─');
+{
+  const ctx = novoSandbox();
+  const ONTEM = run(ctx, 'somaDias(hoje(), -1)');
+
+  eq('hoje: partesDe bate com o cálculo ao vivo', run(ctx, `
+    JSON.stringify(partesDe(hoje())) === JSON.stringify(notaDoDia(hoje()).partes);
+  `), true);
+
+  run(ctx, `congelarScore('${ONTEM}');`);
+  // DB.get() devolve cópia nova a cada chamada — trocar as partes precisa
+  // montar o array inteiro e gravar de uma vez (a armadilha documentada
+  // em CLAUDE/memória: mexer numa cópia solta e DB.set não pega a edição).
+  run(ctx, `
+    DB.set('scores', DB.get('scores').map(s => s.data === '${ONTEM}'
+      ? { ...s, partes: { refeicoes: 0.42, agua: 0.9, medicamentos: null, exercicio: null } }
+      : s));
+  `);
+  eq('dia passado: partesDe lê o congelado, não recalcula', run(ctx, `
+    partesDe('${ONTEM}').refeicoes;
+  `), 0.42);
+}
+
+console.log('\n── Progresso: heatmap de aderência ───────────');
+{
+  const ctx = novoSandbox();
+  const html = run(ctx, 'heatmapAderencia()');
+  eq('12 semanas × 7 dias = 84 quadradinhos', run(ctx, `
+    (heatmapAderencia().match(/heat-d (nota|fora)/g) || []).length;
+  `), 84);
+  eq('tem a legenda de menos pra mais', html.includes('menos') && html.includes('mais'), true);
+  eq('lembra o que mantém a sequência', run(ctx, `heatmapAderencia().includes(NOTA_SEQUENCIA + '%')`), true);
+}
+
 console.log(`\n${falhou ? '✗' : '✓'} ${ok} passaram, ${falhou} falharam\n`);
 process.exit(falhou ? 1 : 0);

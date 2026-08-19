@@ -590,6 +590,16 @@ function notaDe(data) {
   return s ? s.nota : notaDoDia(data).nota;
 }
 
+/** As partes por trás da nota de qualquer dia — mesma regra do notaDe
+ *  (congelada se passou, ao vivo se é hoje), só que devolve o detalhamento
+ *  em vez do número final. Usado pra comparar semana com semana por métrica
+ *  (refeições, água…), não só pela nota geral. */
+function partesDe(data) {
+  if (data === hoje()) return notaDoDia(data).partes;
+  const s = (DB.get('scores') || []).find(x => x.data === data);
+  return s ? s.partes : notaDoDia(data).partes;
+}
+
 /** Ela pode editar um dia passado (esqueceu de marcar antes da meia-noite) —
  *  sem isso, o placar daquele dia ficaria preso no valor de antes da edição
  *  pra sempre. Só reescreve se o valor mudou de verdade, então dá pra chamar
