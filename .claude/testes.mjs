@@ -255,6 +255,55 @@ console.log('\n── Medicamentos por frequência ─────────�
   eq('amanhã entra o de outro dia', run(ctx, 'medsDoDia(somaDias(hoje(),1)).map(m => m.id).includes("c")'), true);
 }
 
+console.log('\n── Vitamina semanal: recorrência de verdade ──');
+{
+  // O caso que o Rodrigo descreveu: cadastra "Vitamina D" uma vez por semana,
+  // na quarta. Tem que voltar TODA quarta — não só na primeira vez.
+  const ctx = novoSandbox();
+  run(ctx, `
+    DB.set('medicamentos', [
+      {id:'vd', nome:'Vitamina D', forma:'capsula', dose:'1 cápsula', hora:'09:00',
+       frequencia:'semanal', dias:[3], obs:'', ativo:true},
+      {id:'dia', nome:'Diária', forma:'capsula', dose:'', hora:'13:00',
+       frequencia:'diaria', dias:[], obs:'', ativo:true},
+    ]);
+    var QUARTA = hoje();
+    while (deData(QUARTA).getDay() !== 3) QUARTA = somaDias(QUARTA, -1);
+  `);
+
+  eq('na quarta ela aparece', run(ctx, "medsDoDia(QUARTA).map(m => m.nome)"), ['Vitamina D', 'Diária']);
+  eq('na quinta não', run(ctx, "medsDoDia(somaDias(QUARTA, 1)).map(m => m.nome)"), ['Diária']);
+  eq('na quarta da semana ANTERIOR também aparece — é recorrência, não um evento só',
+     run(ctx, "medsDoDia(somaDias(QUARTA, -7)).some(m => m.id === 'vd')"), true);
+  eq('e na de 4 semanas atrás idem',
+     run(ctx, "medsDoDia(somaDias(QUARTA, -28)).some(m => m.id === 'vd')"), true);
+
+  eq('entra no fio do dia, na posição do horário cadastrado', run(ctx, `
+    const itens = itensDoDia(QUARTA);
+    itens.findIndex(i => i.nome === 'Vitamina D') < itens.findIndex(i => i.nome === 'Diária');
+  `), true);
+
+  // A hora que ela TOMOU é a que fica registrada, não a do cadastro
+  run(ctx, `irParaDia(QUARTA); abrirMedicamento('vd'); definirHoraMedicamento('08:20'); confirmarMedicamento();`);
+  eq('marca como feito na data certa', run(ctx, `
+    const i = itensDoDia(QUARTA).find(x => x.nome === 'Vitamina D');
+    [i.estado, horaVisivel(i)];
+  `), ['feito', '08:20']);
+  eq('e a quarta anterior continua pendente — cada semana é a sua', run(ctx, `
+    itensDoDia(somaDias(QUARTA, -7)).find(x => x.nome === 'Vitamina D').estado;
+  `), 'pendente');
+
+  // Na quarta o dia tem 2 remédios (a semanal + a diária) e ela tomou 1 → 0,5.
+  // Na quinta a semanal nem existe, então o denominador é 1 (só a diária).
+  eq('a semanal entra no denominador da nota só no dia dela', run(ctx, `
+    [notaDoDia(QUARTA).partes.medicamentos, notaDoDia(somaDias(QUARTA, 1)).partes.medicamentos];
+  `), [0.5, 0]);
+  eq('tomando as duas na quarta, a parte de medicamentos fecha em 1', run(ctx, `
+    abrirMedicamento('dia'); confirmarMedicamento();
+    notaDoDia(QUARTA).partes.medicamentos;
+  `), 1);
+}
+
 console.log('\n── Plano real da clínica ───────────────────');
 {
   const ctx = novoSandbox();

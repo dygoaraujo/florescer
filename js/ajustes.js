@@ -61,7 +61,7 @@ RENDER.ajustes = function () {
           </span>
           <span style="color:var(--tinta-fraca)">${IC.seta}</span>
         </button>`).join('') : '<div class="vazio">Nada cadastrado ainda.</div>'}
-      <button class="btn btn-vazio btn-sm" style="margin-top:14px" onclick="editarMedicamento()">${IC.mais} Medicamento</button>
+      <button class="btn btn-vazio btn-sm" style="margin-top:14px" onclick="editarMedicamento()">${IC.mais} Medicamento ou vitamina</button>
     </div>
 
     <div class="sec"><h2>Metas do dia</h2></div>
@@ -528,14 +528,14 @@ function editarMedicamento(id) {
           horário. O que fica registrado é a hora em que ela marcar "Tomei".</p>
         <div class="campo">
           <label for="md-freq">Frequência</label>
-          <select id="md-freq" onchange="document.getElementById('md-dias').style.display = this.value === 'diaria' ? 'none' : 'block'">
+          <select id="md-freq" onchange="mudarFreqMed(this.value)">
             <option value="diaria"  ${m?.frequencia === 'diaria'  || !m ? 'selected' : ''}>Todo dia</option>
             <option value="semanal" ${m?.frequencia === 'semanal' ? 'selected' : ''}>Uma vez por semana</option>
             <option value="dias"    ${m?.frequencia === 'dias'    ? 'selected' : ''}>Em dias específicos</option>
           </select>
         </div>
         <div class="campo" id="md-dias" style="display:${m && m.frequencia !== 'diaria' ? 'block' : 'none'}">
-          <label>Em quais dias</label>
+          <label id="md-dias-lbl">${m?.frequencia === 'semanal' ? 'Em qual dia' : 'Em quais dias'}</label>
           <div class="toggles" id="md-dias-t">
             ${DIAS_LETRA.map((l, k) => `<button type="button" class="toggle ${edMedDias.includes(k) ? 'on' : ''}"
               onclick="alternarDiaMed(${k}, this)" aria-label="${DIAS_CURTOS[k]}">${l}</button>`).join('')}
@@ -561,11 +561,39 @@ function editarMedicamento(id) {
   document.getElementById('med-form').onsubmit = e => { e.preventDefault(); salvarMedicamento(); };
 }
 
+/** "Uma vez por semana" é UM dia — deixar marcar três dias fazia a tela
+ *  mentir sobre a própria opção escolhida (e salvava os três em silêncio).
+ *  Então em 'semanal' os dias viram escolha única: tocar noutro dia move a
+ *  marca, não soma. Em 'dias específicos' continua podendo marcar vários. */
+const freqMedAtual = () => (document.getElementById('md-freq') || {}).value || 'diaria';
+
 function alternarDiaMed(d, btn) {
   const i = edMedDias.indexOf(d);
+
+  if (freqMedAtual() === 'semanal') {
+    if (i >= 0) edMedDias = [];              // tocar de novo no mesmo dia desmarca
+    else edMedDias = [d];
+    document.querySelectorAll('#md-dias-t .toggle')
+      .forEach((b, k) => b.classList.toggle('on', edMedDias.includes(k)));
+    return;
+  }
+
   if (i >= 0) edMedDias.splice(i, 1); else edMedDias.push(d);
   edMedDias.sort();
   btn.classList.toggle('on');
+}
+
+/** Trocar a frequência tem que arrumar o que já estava marcado: virar
+ *  "uma vez por semana" com 3 dias selecionados deixaria a tela e o dado
+ *  em desacordo desde o primeiro segundo. */
+function mudarFreqMed(v) {
+  const cx = document.getElementById('md-dias');
+  cx.style.display = v === 'diaria' ? 'none' : 'block';
+  document.getElementById('md-dias-lbl').textContent = v === 'semanal' ? 'Em qual dia' : 'Em quais dias';
+
+  if (v === 'semanal' && edMedDias.length > 1) edMedDias = [edMedDias[0]];
+  document.querySelectorAll('#md-dias-t .toggle')
+    .forEach((b, k) => b.classList.toggle('on', edMedDias.includes(k)));
 }
 
 function alternarAtivoMed(btn) {
@@ -591,12 +619,14 @@ function salvarMedicamento() {
     dose: document.getElementById('md-dose').value.trim(),
     hora: document.getElementById('md-hora').value,
     frequencia: freq,
-    dias: freq === 'diaria' ? [] : edMedDias,
+    dias: freq === 'diaria' ? [] : freq === 'semanal' ? edMedDias.slice(0, 1) : edMedDias,
     obs: document.getElementById('md-obs').value.trim(),
     ativo: ativoBtn ? ativoBtn.dataset.on === 'true' : true,
   };
   if (!reg.nome) return toast('Dê um nome ao medicamento');
-  if (freq !== 'diaria' && !reg.dias.length) return toast('Escolha pelo menos um dia');
+  if (freq !== 'diaria' && !reg.dias.length) {
+    return toast(freq === 'semanal' ? 'Escolha o dia da semana' : 'Escolha pelo menos um dia');
+  }
 
   const meds = DB.get('medicamentos') || [];
   const i = meds.findIndex(x => x.id === reg.id);
